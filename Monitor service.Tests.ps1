@@ -298,172 +298,175 @@ Describe 'send an e-mail to the admin when' {
         }
     }
 }
-Describe 'service startup types are corrected when they are incorrect' {
-    BeforeEach {
-        $testJsonFile = @{
-            Tasks    = @(
-                @{
-                    ComputerName          = @('PC1')
-                    SetServiceStartupType = @{
-                        Automatic        = @()
-                        DelayedAutostart = @()
-                        Disabled         = @()
-                        Manual           = @()
+Describe 'service startup types are' {
+    Context 'corrected when they are incorrect' {
+        BeforeEach {
+            $testJsonFile = @{
+                Tasks    = @(
+                    @{
+                        ComputerName          = @('PC1')
+                        SetServiceStartupType = @{
+                            Automatic        = @()
+                            DelayedAutostart = @()
+                            Disabled         = @()
+                            Manual           = @()
+                        }
+                        Execute               = @{
+                            StopService  = @()
+                            KillProcess  = @()
+                            StartService = @()
+                        }
                     }
-                    Execute               = @{
-                        StopService  = @()
-                        KillProcess  = @()
-                        StartService = @()
-                    }
+                )
+                SendMail = @{
+                    To = 'bob@contoso.com'
                 }
-            )
-            SendMail = @{
-                To = 'bob@contoso.com'
             }
         }
-    }
-    It "actual '<actual>' expected '<expected>'"-ForEach @(
-        @{ actual = 'Automatic'; expected = 'DelayedAutoStart' }
-        @{ actual = 'Automatic'; expected = 'Disabled' }
-        @{ actual = 'Automatic'; expected = 'Manual' }
-        @{ actual = 'DelayedAutoStart'; expected = 'Automatic' }
-        @{ actual = 'DelayedAutoStart'; expected = 'Disabled' }
-        @{ actual = 'DelayedAutoStart'; expected = 'Manual' }
-        @{ actual = 'Disabled'; expected = 'Automatic' }
-        @{ actual = 'Disabled'; expected = 'DelayedAutoStart' }
-        @{ actual = 'Disabled'; expected = 'Manual' }
-        @{ actual = 'Manual'; expected = 'Automatic' }
-        @{ actual = 'Manual'; expected = 'DelayedAutoStart' }
-        @{ actual = 'Manual'; expected = 'Disabled' }
-    ) {
-        Mock Get-Service {
-            @{
-                Status      = 'Running'
-                StartType   = $actual
-                Name        = 'testService'
-                DisplayName = 'the display name'
-            }
-        }
-        Mock Test-DelayedAutoStartHC { $true }
-
-        if ($expected -eq 'DelayedAutoStart') {
-            Mock Test-DelayedAutoStartHC { $false }            
-        }
-        
-        if ($actual -eq 'DelayedAutoStart') {
+        It "actual '<actual>' expected '<expected>'"-ForEach @(
+            @{ actual = 'Automatic'; expected = 'DelayedAutoStart' }
+            @{ actual = 'Automatic'; expected = 'Disabled' }
+            @{ actual = 'Automatic'; expected = 'Manual' }
+            @{ actual = 'DelayedAutoStart'; expected = 'Automatic' }
+            @{ actual = 'DelayedAutoStart'; expected = 'Disabled' }
+            @{ actual = 'DelayedAutoStart'; expected = 'Manual' }
+            @{ actual = 'Disabled'; expected = 'Automatic' }
+            @{ actual = 'Disabled'; expected = 'DelayedAutoStart' }
+            @{ actual = 'Disabled'; expected = 'Manual' }
+            @{ actual = 'Manual'; expected = 'Automatic' }
+            @{ actual = 'Manual'; expected = 'DelayedAutoStart' }
+            @{ actual = 'Manual'; expected = 'Disabled' }
+        ) {
             Mock Get-Service {
                 @{
                     Status      = 'Running'
-                    StartType   = 'Automatic'
+                    StartType   = $actual
                     Name        = 'testService'
                     DisplayName = 'the display name'
                 }
             }
+            Mock Test-DelayedAutoStartHC { $true }
+    
+            if ($expected -eq 'DelayedAutoStart') {
+                Mock Test-DelayedAutoStartHC { $false }            
+            }
+            
+            if ($actual -eq 'DelayedAutoStart') {
+                Mock Get-Service {
+                    @{
+                        Status      = 'Running'
+                        StartType   = 'Automatic'
+                        Name        = 'testService'
+                        DisplayName = 'the display name'
+                    }
+                }
+            }
+            
+            $testJsonFile.Tasks[0].SetServiceStartupType.$expected = @(
+                'testService'
+            )
+            $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    
+            .$testScript @testParams
+    
+            if (($actual -eq 'DelayedAutoStart') -or ($actual -eq 'Automatic')) {
+                Should -Invoke Test-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
+                    ($ServiceName -eq 'testService') -and
+                    ($ComputerName -eq 'PC1')
+                }  
+            }
+            else {
+                Should -Not -Invoke Test-DelayedAutoStartHC
+            }
+    
+            if ($expected -eq 'DelayedAutoStart') {
+                Should -Invoke Set-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
+                    ($ServiceName -eq 'testService') -and
+                    ($ComputerName -eq 'PC1')
+                }  
+                Should -Not -Invoke Set-Service
+            }
+            else {
+                Should -Not -Invoke Set-DelayedAutoStartHC
+                Should -Invoke Set-Service -Times 1 -Exactly -ParameterFilter {
+                    $StartupType -eq $expected
+                }
+            }
         }
-        
-        $testJsonFile.Tasks[0].SetServiceStartupType.$expected = @(
-            'testService'
-        )
-        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
-
-        .$testScript @testParams
-
-        if (($actual -eq 'DelayedAutoStart') -or ($actual -eq 'Automatic')) {
-            Should -Invoke Test-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
-                ($ServiceName -eq 'testService') -and
-                ($ComputerName -eq 'PC1')
-            }  
+    }
+    Context 'not corrected when they are correct' {
+        BeforeEach {
+            $testJsonFile = @{
+                Tasks    = @(
+                    @{
+                        ComputerName          = @('PC1')
+                        SetServiceStartupType = @{
+                            Automatic        = @()
+                            DelayedAutostart = @()
+                            Disabled         = @()
+                            Manual           = @()
+                        }
+                        Execute               = @{
+                            StopService  = @()
+                            KillProcess  = @()
+                            StartService = @()
+                        }
+                    }
+                )
+                SendMail = @{
+                    To = 'bob@contoso.com'
+                }
+            }
         }
-        else {
-            Should -Not -Invoke Test-DelayedAutoStartHC
-        }
-
-        if ($expected -eq 'DelayedAutoStart') {
-            Should -Invoke Set-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
-                ($ServiceName -eq 'testService') -and
-                ($ComputerName -eq 'PC1')
-            }  
+        It "actual '<actual>' expected '<expected>'"-ForEach @(
+            @{ actual = 'Automatic'; expected = 'Automatic' }
+            @{ actual = 'DelayedAutoStart'; expected = 'DelayedAutoStart' }
+            @{ actual = 'Disabled'; expected = 'Disabled' }
+            @{ actual = 'Manual'; expected = 'Manual' }
+        ) {
+            Mock Get-Service {
+                @{
+                    Status      = 'Running'
+                    StartType   = $actual
+                    Name        = 'testService'
+                    DisplayName = 'the display name'
+                }
+            }
+            Mock Test-DelayedAutoStartHC { $false }
+    
+            if ($actual -eq 'DelayedAutoStart') {
+                Mock Test-DelayedAutoStartHC { $true }       
+                Mock Get-Service {
+                    @{
+                        Status      = 'Running'
+                        StartType   = 'Automatic'
+                        Name        = 'testService'
+                        DisplayName = 'the display name'
+                    }
+                }
+            }
+            
+            $testJsonFile.Tasks[0].SetServiceStartupType.$expected = @(
+                'testService'
+            )
+            $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    
+            .$testScript @testParams
+    
+            if (($actual -eq 'DelayedAutoStart') -or ($actual -eq 'Automatic')) {
+                Should -Invoke Test-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
+                    ($ServiceName -eq 'testService') -and
+                    ($ComputerName -eq 'PC1')
+                }  
+            }
+            else {
+                Should -Not -Invoke Test-DelayedAutoStartHC
+            }
+    
             Should -Not -Invoke Set-Service
-        }
-        else {
             Should -Not -Invoke Set-DelayedAutoStartHC
-            Should -Invoke Set-Service -Times 1 -Exactly -ParameterFilter {
-                $StartupType -eq $expected
-            }
+            
         }
     }
 }
-Describe 'service startup types are not corrected when they are correct' {
-    BeforeEach {
-        $testJsonFile = @{
-            Tasks    = @(
-                @{
-                    ComputerName          = @('PC1')
-                    SetServiceStartupType = @{
-                        Automatic        = @()
-                        DelayedAutostart = @()
-                        Disabled         = @()
-                        Manual           = @()
-                    }
-                    Execute               = @{
-                        StopService  = @()
-                        KillProcess  = @()
-                        StartService = @()
-                    }
-                }
-            )
-            SendMail = @{
-                To = 'bob@contoso.com'
-            }
-        }
-    }
-    It "actual '<actual>' expected '<expected>'"-ForEach @(
-        @{ actual = 'Automatic'; expected = 'Automatic' }
-        @{ actual = 'DelayedAutoStart'; expected = 'DelayedAutoStart' }
-        @{ actual = 'Disabled'; expected = 'Disabled' }
-        @{ actual = 'Manual'; expected = 'Manual' }
-    ) {
-        Mock Get-Service {
-            @{
-                Status      = 'Running'
-                StartType   = $actual
-                Name        = 'testService'
-                DisplayName = 'the display name'
-            }
-        }
-        Mock Test-DelayedAutoStartHC { $false }
 
-        if ($actual -eq 'DelayedAutoStart') {
-            Mock Test-DelayedAutoStartHC { $true }       
-            Mock Get-Service {
-                @{
-                    Status      = 'Running'
-                    StartType   = 'Automatic'
-                    Name        = 'testService'
-                    DisplayName = 'the display name'
-                }
-            }
-        }
-        
-        $testJsonFile.Tasks[0].SetServiceStartupType.$expected = @(
-            'testService'
-        )
-        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
-
-        .$testScript @testParams
-
-        if (($actual -eq 'DelayedAutoStart') -or ($actual -eq 'Automatic')) {
-            Should -Invoke Test-DelayedAutoStartHC -Times 1 -Exactly -ParameterFilter {
-                ($ServiceName -eq 'testService') -and
-                ($ComputerName -eq 'PC1')
-            }  
-        }
-        else {
-            Should -Not -Invoke Test-DelayedAutoStartHC
-        }
-
-        Should -Not -Invoke Set-Service
-        Should -Not -Invoke Set-DelayedAutoStartHC
-        
-    } -Tag test
-}
