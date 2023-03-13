@@ -299,7 +299,7 @@ Describe 'send an e-mail to the admin when' {
     }
 }
 Describe 'when all tests pass' {
-    BeforeEach {
+    <# BeforeEach {
         $testJsonFile = @{
             Tasks    = @(
                 @{
@@ -320,14 +320,36 @@ Describe 'when all tests pass' {
             SendMail = @{
                 To = 'bob@contoso.com'
             }
-        }     
-    }
+        } 
+    }  #>
     Context 'SetServiceStartupType' {
-        It 'is not changed when it is correct' {
+        BeforeAll {
+            $testJsonFile = @{
+                Tasks    = @(
+                    @{
+                        ComputerName          = @('PC1')
+                        SetServiceStartupType = @{
+                            Automatic        = @()
+                            DelayedAutostart = @()
+                            Disabled         = @()
+                            Manual           = @()
+                        }
+                        Execute               = @{
+                            StopService  = @()
+                            KillProcess  = @()
+                            StartService = @()
+                        }
+                    }
+                )
+                SendMail = @{
+                    To = 'bob@contoso.com'
+                }
+            }
+
             Mock Get-Service {
                 @{
                     Status      = 'Running'
-                    StartType   = 'Manual'
+                    StartType   = 'Automatic'
                     Name        = 'testService'
                     DisplayName = 'the display name'
                 }
@@ -339,8 +361,13 @@ Describe 'when all tests pass' {
             $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
 
             .$testScript @testParams
-
-            Should -Not -Invoke Set-Service
-        } -Tag test
-    }
+        }
+        It 'test for Automatic or DelayedAutoStart' {
+            Should -Invoke Test-DelayedAutoStartHC -Scope Context -Times 1 -Exactly
+        }
+        It 'is not changed when it is correct' {
+            Should -Not -Invoke Set-Service -Scope Context -Times 1 -Exactly
+            Should -Not -Invoke Set-DelayedAutoStartHC -Scope Context -Times 1 -Exactly
+        } 
+    } -Tag test
 }

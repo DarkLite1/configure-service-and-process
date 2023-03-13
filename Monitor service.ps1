@@ -157,7 +157,7 @@ Begin {
             )
         }
     
-        #region Test .json file properties
+        #region Test and sanitize .json file properties
         if (-not ($mailTo = $file.SendMail.To)) {
             throw "Input file '$ImportFile': No 'SendMail.To' addresses found."
         }
@@ -182,7 +182,7 @@ Begin {
 
             $actionInTask = $false
 
-            #region Task.SetServiceStartupType properties
+            #region SetServiceStartupType properties
             $properties = $task.SetServiceStartupType.PSObject.Properties.Name
 
             $serviceNamesInStartupTypes = @()
@@ -218,7 +218,7 @@ Begin {
             }
             #endregion
 
-            #region Task.Execute properties
+            #region Execute properties
             $properties = $task.Execute.PSObject.Properties.Name
             
             foreach ($executionType in $input.executionTypes) {
@@ -237,6 +237,7 @@ Begin {
             }
             #endregion
 
+            #region Test incorrect input
             if (-not $task.ComputerName) {
                 throw "Input file '$ImportFile': No 'ComputerName' found in one of the 'Tasks'."
             }
@@ -252,13 +253,12 @@ Begin {
                 throw "duplicate ComputerName '$($duplicateComputers.Name)' found in a single task"
             }
 
-            $task.SetServiceStartupType.Disabled | 
-            Where-Object { 
-                $task.Execute.StartService -contains $_ 
-            } |
-            ForEach-Object {
-                throw "Service '$_' cannot have StartupType 'Disabled' and 'StartService' at the same time"
+            foreach ($disabledService in $task.SetServiceStartupType.Disabled) {
+                if ($task.Execute.StartService -contains $disabledService) {
+                    throw "Service '$disabledService' cannot have StartupType 'Disabled' and 'StartService' at the same time"    
+                }
             }
+            #endregion
         }
         #endregion
     }
