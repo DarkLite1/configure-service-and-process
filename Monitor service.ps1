@@ -126,15 +126,18 @@ Begin {
         Import-EventLogParamsHC -Source $ScriptName
         Write-EventLog @EventStartParams
         Get-ScriptRuntimeHC -Start
+        $Error.Clear()
 
         #region Logging
         try {
             $logParams = @{
                 LogFolder    = New-Item -Path $LogFolder -ItemType 'Directory' -Force -ErrorAction 'Stop'
+                Name         = $ScriptName
                 Date         = 'ScriptStartTime'
                 NoFormatting = $true
-                Unique       = $True
+                # Unique       = $true
             }
+            $logFile = New-LogFileNameHC @logParams
         }
         Catch {
             throw "Failed creating the log folder '$LogFolder': $_"
@@ -562,7 +565,136 @@ Process {
 
 End {
     Try {
+        $excelParams = @{
+            Path         = "$logFile - Report.xlsx"
+            AutoSize     = $true
+            FreezeTopRow = $true
+            Verbose      = $false
+        }
 
+        $mailParams = @{
+            To        = $mailTo
+            Bcc       = $ScriptAdmin
+            Priority  = 'Normal'
+            LogFolder = $logParams.LogFolder
+            Header    = $sendMailHeader
+            Save      = "$logFile - Mail.html"
+        }
+
+        #region Export results to Excel file
+        if ($export.service) {
+            $excelParams.WorksheetName = $excelParams.TableName = 'Services'
+
+            $export.service | Sort-Object -Property 'Date' | 
+            Export-Excel @excelParams
+
+            $mailParams.Attachments = $excelParams.Path
+        }
+
+        if ($export.process) {
+            $excelParams.WorksheetName = $excelParams.TableName = 'Processes'
+
+            $export.process | Sort-Object -Property 'Date' | 
+            Export-Excel @excelParams
+
+            $mailParams.Attachments = $excelParams.Path
+        }
+        #endregion
+
+        $count = @{
+            service     = @{
+                total  = $export.service.Count
+                action = $export.service | Where-Object { $_.Action } | Measure-Object | Select-Object -ExpandProperty 'Count'
+                error  = $export.service | Where-Object { $_.Error } | Measure-Object | Select-Object -ExpandProperty 'Count'
+            }
+            process     = @{
+                total  = $export.process.Count
+                action = $export.process | Where-Object { $_.Action } | Measure-Object | Select-Object -ExpandProperty 'Count'
+                error  = $export.process | Where-Object { $_.Error } | Measure-Object | Select-Object -ExpandProperty 'Count'
+            }
+            systemError = ($Error.Exception.Message | Measure-Object).Count
+        }
+
+        #region Subject and Priority
+        $mailParams.Subject = '{0} service{1}, {2} process{3}' -f
+        $count.service.total,
+        $(if ($count.service.total -ne 1) { 's' }),
+        $count.process.total,
+        $(if ($count.process.total -ne 1) { 'es' })
+
+        if (
+            $totalErrorCount = $count.systemError + $count.service.error + 
+            $count.process.error
+        ) {
+            $mailParams.Priority = 'High'
+            $mailParams.Subject += ", $totalErrorCount error{0}" -f $(
+                if ($totalErrorCount -gt 1) { 's' }
+            )
+        }
+        #endregion
+
+        $systemErrorHtmlList = if ($count.systemError) {
+            "<p>Detected <b>{0} error{1}:{2}</p>" -f $count.systemError, 
+            $(
+                if ($count.systemError -gt 1) { 's' }
+            ),
+            $(
+                $Error.Exception.Message | Where-Object { $_ } | 
+                ConvertTo-HtmlListHC
+            )
+        }
+     
+        #region Create HTML table
+        $htmlTable = "
+        <table>
+            <tr>
+                <th colspan=`"2`">Services</th>
+            </tr>
+            <tr>
+                <td>Rows</td>
+                <td>$($count.service.total)</td>
+            </tr>
+            <tr>
+                <td>Actions</td>
+                <td>$($count.service.action)</td>
+            </tr>
+            <tr>
+                <td>Errors</td>
+                <td>$($count.service.error)</td>
+            </tr>
+            <tr>
+                <th colspan=`"2`">Processes</th>
+            </tr>
+            <tr>
+                <td>Total</td>
+                <td>$($count.process.total)</td>
+            </tr>
+            <tr>
+                <td>Actions</td>
+                <td>$($count.process.action)</td>
+            </tr>
+            <tr>
+                <td>Errors</td>
+                <td>$($count.process.error)</td>
+            </tr>
+        </table>" 
+        #endregion
+     
+        #region Send mail
+        $mailParams.Message = "
+            <p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>
+            $systemErrorHtmlList
+            $htmlTable
+            {0}" -f 
+        $(
+            if ($mailParams.Attachments) {
+                '<p><i>* Check the attachment for details</i></p>'
+            }
+        )
+     
+        Get-ScriptRuntimeHC -Stop
+        Send-MailHC @mailParams
+        #endregion
     }
     Catch {
         Write-Warning $_

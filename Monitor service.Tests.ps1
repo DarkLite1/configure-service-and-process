@@ -327,7 +327,7 @@ Describe 'a service startup type in SetServiceStartupType is' {
                 }
             }
         }
-        It "actual '<actual>' expected '<expected>'"-ForEach @(
+        It "actual '<actual>' expected '<expected>'" -ForEach @(
             @{ actual = 'Automatic'; expected = 'DelayedAutoStart' }
             @{ actual = 'Automatic'; expected = 'Disabled' }
             @{ actual = 'Automatic'; expected = 'Manual' }
@@ -654,3 +654,124 @@ Describe 'a service in StartService is' {
         Should -Not -Invoke Start-Service
     }
 }
+Describe 'an e-mail is sent to the end user with' {
+    BeforeAll {
+        $testJsonFile = @{
+            Tasks    = @(
+                @{
+                    ComputerName          = @('PC1')
+                    SetServiceStartupType = @{
+                        Automatic        = @('testServiceStartupTypeAutomatic')
+                        DelayedAutostart = @('testServiceStartupTypeDelayed')
+                        Disabled         = @('testServiceDisabled')
+                        Manual           = @('testServiceManual')
+                    }
+                    Execute               = @{
+                        StopService  = @('testServiceStopped')
+                        KillProcess  = @('testProcessKilled')
+                        StartService = @('testServiceStarted')
+                    }
+                }
+            )
+            SendMail = @{
+                To = 'bob@contoso.com'
+            }
+        }
+        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    }
+    Context 'an Excel file in attachment' {
+        Context "with worksheet 'Services'" {
+            BeforeAll {
+                $testExportedExcelRows = @(
+                    @{
+                        Task         = 1
+                        Part         = 'SetServiceStartupType'
+                        # Date         = Get-Date
+                        ComputerName = 'PC1'
+                        ServiceName  = 'testService'
+                        DisplayName  = $null
+                        StartupType  = $null
+                        Status       = $null
+                        Action       = $null
+                        Error        = $null
+                    }
+                )
+    
+                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Services'
+            }
+            It 'to the log folder' {
+                $testExcelLogFile | Should -Not -BeNullOrEmpty
+            }
+            It 'with the correct total rows' {
+                $actual | Should -HaveCount $testExportedExcelRows.Count
+            }
+            It 'with the correct data in the rows' {
+                foreach ($testRow in $testExportedExcelRows) {
+                    $actualRow = $actual | Where-Object {
+                        $_.ComputerName -eq $testRow.ComputerName
+                    }
+                    $actualRow.Drive | Should -Be $testRow.Drive
+                    $actualRow.Date.ToString('yyyyMMdd HHmm') | 
+                    Should -Be $testRow.Date.ToString('yyyyMMdd HHmm')
+                    $actualRow.Size | Should -Be $testRow.Size
+                    $actualRow.Encrypted | Should -Be $testRow.Encrypted
+                    $actualRow.VolumeStatus | Should -Be $testRow.VolumeStatus
+                    $actualRow.Status | Should -Be $testRow.Status
+                    $actualRow.PendingReboot | Should -Be $testRow.PendingReboot
+                    $actualRow.KeyProtectorRecoveryPassword | 
+                    Should -Be $testRow.KeyProtectorRecoveryPassword
+                    $actualRow.KeyProtectorTpm | 
+                    Should -Be $testRow.KeyProtectorTpm
+                    $actualRow.KeyProtectorOther | 
+                    Should -Be $testRow.KeyProtectorOther
+                }
+            }
+        }
+        Context "with worksheet 'Processes'" {
+            BeforeAll {
+                $testExportedExcelRows = @(
+                    @{
+                        ComputerName = $testData[0].ComputerName
+                        Date         = $testData[0].Date
+                        Activated    = $testData[0].Tpm.TpmActivated
+                        Present      = $testData[0].Tpm.TpmPresent
+                        Enabled      = $testData[0].Tpm.TpmEnabled
+                        Ready        = $testData[0].Tpm.TpmReady
+                        Owned        = $testData[0].Tpm.TpmOwned
+                    },
+                    @{
+                        ComputerName = $testDataNew[0].ComputerName
+                        Date         = $testDataNew[0].Date
+                        Activated    = $testDataNew[0].Tpm.TpmActivated
+                        Present      = $testDataNew[0].Tpm.TpmPresent
+                        Enabled      = $testDataNew[0].Tpm.TpmEnabled
+                        Ready        = $testDataNew[0].Tpm.TpmReady
+                        Owned        = $testDataNew[0].Tpm.TpmOwned
+                    }
+                )
+    
+                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'TpmStatuses'
+            }
+            It 'to the log folder' {
+                $testExcelLogFile | Should -Not -BeNullOrEmpty
+            }
+            It 'with the correct total rows' {
+                $actual | Should -HaveCount $testExportedExcelRows.Count
+            }
+            It 'with the correct data in the rows' {
+                foreach ($testRow in $testExportedExcelRows) {
+                    $actualRow = $actual | Where-Object {
+                        $_.ComputerName -eq $testRow.ComputerName
+                    }
+                    $actualRow.Activated | Should -Be $testRow.Activated
+                    $actualRow.Date.ToString('yyyyMMdd HHmm') | 
+                    Should -Be $testRow.Date.ToString('yyyyMMdd HHmm')
+                    $actualRow.Present | Should -Be $testRow.Present
+                    $actualRow.Enabled | Should -Be $testRow.Enabled
+                    $actualRow.Ready | Should -Be $testRow.Ready
+                    $actualRow.Owned | Should -Be $testRow.Owned
+                }
+            }
+        }
+    }
+} -Skip
