@@ -43,6 +43,86 @@ Param(
 
 Begin {
     Try {
+        Function Test-DelayedAutoStartHC {
+            Param (
+                [parameter(Mandatory)]
+                [String]$ComputerName,
+                [parameter(Mandatory)]
+                [alias('Name')]
+                [String]$ServiceName
+            )
+        
+            try {
+                $params = @{
+                    ComputerName = $ComputerName
+                    ArgumentList = $ServiceName 
+                    ErrorAction  = 'Stop'
+                }
+                Invoke-Command @params -ScriptBlock {
+                    Param (
+                        [parameter(Mandatory)]
+                        [String]$ServiceName
+                    )
+            
+                    $params = @{
+                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" 
+                        ErrorAction = 'Stop'
+                    }
+                    $property = Get-ItemProperty @params
+            
+                    if (
+                    ($property.Start -eq 2) -and 
+                    ($property.DelayedAutostart -eq 1)
+                    ) {
+                        $true
+                    }
+                    else {
+                        $false
+                    }
+                }
+            }
+            catch {
+                $M = $_
+                $Error.RemoveAt(0)
+                throw "Failed testing if 'DelayedAutostart' is set: $M"
+            }
+        }
+        Function Set-DelayedAutoStartHC {
+            Param (
+                [parameter(Mandatory)]
+                [String]$ComputerName,
+                [parameter(Mandatory)]
+                [alias('Name')]
+                [String]$ServiceName
+            )
+    
+            try {
+                $params = @{
+                    ComputerName = $ComputerName
+                    ArgumentList = $ServiceName 
+                    ErrorAction  = 'Stop'
+                }
+                Invoke-Command @params -ScriptBlock {
+                    Param (
+                        [parameter(Mandatory)]
+                        [String]$ServiceName
+                    )
+
+                    $params = @{
+                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" 
+                        ErrorAction = 'Stop'
+                    }
+                    Set-ItemProperty @params -Name 'Start' -Value 2
+                    Set-ItemProperty @params -Name 'DelayedAutostart' -Value 1
+                }
+            }
+            catch {
+                $M = $_
+                $Error.RemoveAt(0)
+                throw "Failed to enable 'DelayedAutostart': $M"
+            }
+        }
+
         Import-EventLogParamsHC -Source $ScriptName
         Write-EventLog @EventStartParams
         Get-ScriptRuntimeHC -Start
@@ -68,6 +148,15 @@ Begin {
         $file = Get-Content $ImportFile -Raw -EA Stop | ConvertFrom-Json
         #endregion
 
+        $input = @{
+            serviceStartupTypes = @(
+                'Automatic', 'DelayedAutostart', 'Disabled', 'Manual'
+            )
+            executionTypes      = @(
+                'StopService', 'KillProcess', 'StartService'
+            )
+        }
+    
         #region Test .json file properties
         if (-not ($mailTo = $file.SendMail.To)) {
             throw "Input file '$ImportFile': No 'SendMail.To' addresses found."
@@ -98,17 +187,17 @@ Begin {
 
             $serviceNamesInStartupTypes = @()
         
-            $serviceStartupTypes = @(
-                'Automatic', 
-                'DelayedAutostart', 
-                'Disabled',
-                'Manual'
-            )
-
-            foreach ($startupTypeName in $serviceStartupTypes) {
+            foreach ($startupTypeName in $input.serviceStartupTypes) {
                 if ($properties -notContains $startupTypeName) {
                     throw "Property 'SetServiceStartupType.$startupTypeName' not found in one of the 'Tasks'."
                 }
+
+                #region Remove empty values from arrays
+                $task.SetServiceStartupType.$startupTypeName = 
+                $task.SetServiceStartupType.$startupTypeName | 
+                Where-Object { $_ }
+                #endregion
+
                 if ($task.SetServiceStartupType.$startupTypeName) {
                     $actionInTask = $true
                 }
@@ -132,17 +221,19 @@ Begin {
             #region Task.Execute properties
             $properties = $task.Execute.PSObject.Properties.Name
             
-            @(
-                'StopService', 
-                'KillProcess',
-                'StartService'
-            ) | ForEach-Object {
-                if ($properties -notContains $_) {
-                    throw "Property 'Execute.$_' not found in one of the 'Tasks'."
+            foreach ($executionType in $input.executionTypes) {
+                if ($properties -notContains $executionType) {
+                    throw "Property 'Execute.$executionType' not found in one of the 'Tasks'."
                 }
-                if ($task.Execute.$_) {
+
+                #region Remove empty values from arrays
+                $task.Execute.$executionType = $task.Execute.$executionType | 
+                Where-Object { $_ }
+                #endregion
+
+                if ($task.Execute.$executionType) {
                     $actionInTask = $true
-                }
+                }   
             }
             #endregion
 
@@ -162,7 +253,9 @@ Begin {
             }
 
             $task.SetServiceStartupType.Disabled | 
-            Where-Object { $task.Execute.StartService -contains $_ } |
+            Where-Object { 
+                $task.Execute.StartService -contains $_ 
+            } |
             ForEach-Object {
                 throw "Service '$_' cannot have StartupType 'Disabled' and 'StartService' at the same time"
             }
@@ -178,30 +271,95 @@ Begin {
 }
 
 Process {
+    $export = @{
+        service = @()
+        process = @()
+    }
+
     Try {
+        $i = 0
         Foreach ($task in $Tasks) {
+            $i++
             foreach ($computerName in $task.ComputerName) {
+                #region Set StartupType
+                foreach ($startupTypeName in $input.serviceStartupTypes) {
+                    foreach (
+                        $serviceName in 
+                        $task.SetServiceStartupType.$startupTypeName
+                    ) {
+                        try {
+                            $result = [PSCustomObject]@{
+                                Task         = $i
+                                Part         = 'SetServiceStartupType'
+                                Date         = Get-Date
+                                ComputerName = $computerName
+                                ServiceName  = $serviceName
+                                DisplayName  = $null
+                                StartupType  = $null
+                                Status       = $null
+                                Action       = $null
+                                Error        = $null
+                            }
+
+                            $params = @{
+                                ComputerName = $computerName
+                                Name         = $serviceName 
+                                ErrorAction  = 'Stop'
+                            }
+                            $service = Get-Service @params
+
+                            #region Get service state before
+                            $result.DisplayName = $service.DisplayName
+                            $result.Status = $service.Status
+
+                            $result.StartupType = if (
+                                ($service.StartType -eq 'Automatic') -and
+                                (Test-DelayedAutoStartHC @params)
+                            ) {
+                                'DelayedAutoStart'
+                            }
+                            else {
+                                $service.StartType
+                            }
+                            #endregion
+
+                            if ($startupTypeName -ne $result.StartupType) {
+                                if ($startupTypeName -eq 'DelayedAutoStart') {
+                                    Set-DelayedAutoStartHC @params
+                                }
+                                else {
+                                    $setParams = @{
+                                        StartupType = $startupTypeName 
+                                        ErrorAction = 'Stop'
+                                    }
+                                    $service | Set-Service @setParams    
+                                }
+
+                                $result.StartupType = $startupTypeName
+
+                                $result.Action = "updated StartupType from '$($result.StartupType)' to '$startupTypeName'"
+
+                                Write-Verbose $M
+                                Write-EventLog @EventOutParams -Message $M
+                            }
+                        }
+                        catch {
+                            $result.Error = $_
+
+                            $M = "'$computerName' service '$serviceName': $_"
+                            Write-Warning $M
+                            Write-EventLog @EventErrorParams -Message $M
+
+                            $Error.RemoveAt(0)
+                        }
+                        finally {
+                            $export.service += $result
+                        }
+                    }
+                }
+                #endregion
+
                 try {
-                    $params = @{
-                        ComputerName = $computerName
-                        Name         = $s.Name 
-                        ErrorAction  = 'Stop'
-                    }
-                    $service = Get-Service @params
-                
-                    Write-Verbose "'$computerName' Service '$($s.Name)' State '$($service.Status)' StartType '$($service.StartType)'"
-        
-                    if ($service.StartType -ne $s.StartType) {
-                        if ($s.StartType -eq 'Disabled') {
-                            Write-Verbose "'$computerName' set StartupType to 'Disabled'"
-                            $service | Set-Service -StartupType 'Disabled'
-                        }
-                        if ($s.StartType -eq 'Automatic') {
-                            Write-Verbose "'$computerName' set StartupType to 'Automatic'"
-                            $service | Set-Service -StartupType 'Automatic'
-                        }
-                    }
-                    
                     if ($service.Status -ne $s.Status) {
                         if ($s.Status -eq 'Stopped') {
                             Write-Verbose "'$computerName' stop service"
@@ -215,10 +373,10 @@ Process {
         
                     $service = Get-Service @params
                 
-                    Write-Verbose "'$computerName' Service '$($s.Name)' State '$($service.Status)' StartType '$($service.StartType)'"
+                    Write-Verbose "'$computerName' Service '$serviceName' State '$($service.Status)' StartType '$($service.StartType)'"
                 }
                 catch {
-                    Write-Warning "Failed stopping service '$($s.Name)' on '$computerName': $_"
+                    Write-Warning "Failed stopping service '$serviceName' on '$computerName': $_"
                 }   
             }
         }    

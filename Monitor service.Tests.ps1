@@ -15,7 +15,29 @@ BeforeAll {
         LogFolder   = New-Item 'TestDrive:/log' -ItemType Directory
     }
 
+    Function Test-DelayedAutoStartHC {
+        Param (
+            [parameter(Mandatory)]
+            [String]$ComputerName,
+            [parameter(Mandatory)]
+            [alias('Name')]
+            [String]$ServiceName
+        )
+    }
+    Function Set-DelayedAutoStartHC {
+        Param (
+            [parameter(Mandatory)]
+            [String]$ComputerName,
+            [parameter(Mandatory)]
+            [alias('Name')]
+            [String]$ServiceName
+        )
+    }
+    Mock  Set-DelayedAutoStartHC {}
+    Mock  Test-DelayedAutoStartHC { $true }
+
     Mock Get-Service
+    Mock Invoke-Command
     Mock Set-Service
     Mock Start-Service
     Mock Stop-Service
@@ -276,6 +298,49 @@ Describe 'send an e-mail to the admin when' {
         }
     }
 }
-# Describe 'when all tests pass' {
+Describe 'when all tests pass' {
+    BeforeEach {
+        $testJsonFile = @{
+            Tasks    = @(
+                @{
+                    ComputerName          = @('PC1')
+                    SetServiceStartupType = @{
+                        Automatic        = @()
+                        DelayedAutostart = @()
+                        Disabled         = @()
+                        Manual           = @()
+                    }
+                    Execute               = @{
+                        StopService  = @()
+                        KillProcess  = @()
+                        StartService = @()
+                    }
+                }
+            )
+            SendMail = @{
+                To = 'bob@contoso.com'
+            }
+        }     
+    }
+    Context 'SetServiceStartupType' {
+        It 'is not changed when it is correct' {
+            Mock Get-Service {
+                @{
+                    Status      = 'Running'
+                    StartType   = 'Manual'
+                    Name        = 'testService'
+                    DisplayName = 'the display name'
+                }
+            }
 
-# }
+            $testJsonFile.Tasks[0].SetServiceStartupType.Manual = @(
+                'testService'
+            )
+            $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+
+            .$testScript @testParams
+
+            Should -Not -Invoke Set-Service
+        } -Tag test
+    }
+}
