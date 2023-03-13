@@ -433,11 +433,8 @@ Describe 'service startup types are not corrected when they are correct' {
         }
         Mock Test-DelayedAutoStartHC { $false }
 
-        if ($expected -eq 'DelayedAutoStart') {
-            Mock Test-DelayedAutoStartHC { $true }            
-        }
-        
         if ($actual -eq 'DelayedAutoStart') {
+            Mock Test-DelayedAutoStartHC { $true }       
             Mock Get-Service {
                 @{
                     Status      = 'Running'
