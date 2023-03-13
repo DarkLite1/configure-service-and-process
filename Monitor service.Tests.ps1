@@ -37,11 +37,15 @@ BeforeAll {
     Mock Test-DelayedAutoStartHC { $true }
 
     Mock Get-Service
+    Mock Get-Process
     Mock Invoke-Command
-    Mock Set-Service
-    Mock Start-Service
-    Mock Stop-Service
     Mock Send-MailHC
+    Mock Set-Service
+    Mock Start-Process
+    Mock Start-Service
+    Mock Stop-Process
+    Mock Stop-Service
+    Mock Test-Connection { $true }
     Mock Write-EventLog
 }
 Describe 'the mandatory parameters are' {
@@ -298,8 +302,8 @@ Describe 'send an e-mail to the admin when' {
         }
     }
 }
-Describe 'service startup types are' {
-    Context 'corrected when they are incorrect' {
+Describe 'a service startup type in SetServiceStartupType is' {
+    Context 'corrected when it is incorrect' {
         BeforeEach {
             $testJsonFile = @{
                 Tasks    = @(
@@ -394,7 +398,7 @@ Describe 'service startup types are' {
             }
         }
     }
-    Context 'not corrected when they are correct' {
+    Context 'ignored when it is correct' {
         BeforeEach {
             $testJsonFile = @{
                 Tasks    = @(
@@ -469,4 +473,184 @@ Describe 'service startup types are' {
         }
     }
 }
+Describe 'a service in StopService is' {
+    BeforeAll {
+        $testJsonFile = @{
+            Tasks    = @(
+                @{
+                    ComputerName          = @('PC1')
+                    SetServiceStartupType = @{
+                        Automatic        = @()
+                        DelayedAutostart = @()
+                        Disabled         = @()
+                        Manual           = @()
+                    }
+                    Execute               = @{
+                        StopService  = @('testService')
+                        KillProcess  = @()
+                        StartService = @()
+                    }
+                }
+            )
+            SendMail = @{
+                To = 'bob@contoso.com'
+            }
+        }
+        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    }
+    It 'stopped when it is running' {
+        $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
+            ServiceName = 'testService'
+            MachineName = 'PC1'
+            Status      = 'Running'
+        }
 
+        Mock Get-Service {
+            $testService
+        } -ParameterFilter {
+            ($ComputerName -eq $computerName) -and
+            ($Name -eq $serviceName)
+        }
+
+        .$testScript @testParams
+
+        Should -Invoke Stop-Service -Times 1 -Exactly -ParameterFilter {
+            $InputObject -eq $testService
+        }
+    }
+    It 'ignored when it is not running' {
+        $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
+            ServiceName = 'testService'
+            MachineName = 'PC1'
+            Status      = 'Stopped'
+        }
+
+        Mock Get-Service {
+            $testService
+        } -ParameterFilter {
+            ($ComputerName -eq $computerName) -and
+            ($Name -eq $serviceName)
+        }
+
+        .$testScript @testParams
+
+        Should -Not -Invoke Stop-Service
+    }
+}
+Describe 'a process in KillProcess is' {
+    BeforeAll {
+        $testJsonFile = @{
+            Tasks    = @(
+                @{
+                    ComputerName          = @('PC1')
+                    SetServiceStartupType = @{
+                        Automatic        = @()
+                        DelayedAutostart = @()
+                        Disabled         = @()
+                        Manual           = @()
+                    }
+                    Execute               = @{
+                        StopService  = @()
+                        KillProcess  = @('testProcess')
+                        StartService = @()
+                    }
+                }
+            )
+            SendMail = @{
+                To = 'bob@contoso.com'
+            }
+        }
+        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    }
+    It 'stopped when it is running' {
+        $testProcess = New-MockObject -Type 'System.Diagnostics.Process' -Properties @{     
+            ProcessName = 'testProcess'
+            Id          = 124
+            MachineName = 'PC1'
+        }
+
+        Mock Get-Process {
+            $testProcess
+        } -ParameterFilter {
+            ($ComputerName -eq $computerName) -and
+            ($Name -eq $processName)
+        }
+
+        .$testScript @testParams
+
+        Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter {
+            $InputObject -eq $testProcess
+        }
+    }
+    It 'ignored when it is not running' {
+        Mock Get-Process {}
+
+        .$testScript @testParams
+
+        Should -Not -Invoke Stop-Process
+    }
+}
+Describe 'a service in StartService is' {
+    BeforeAll {
+        $testJsonFile = @{
+            Tasks    = @(
+                @{
+                    ComputerName          = @('PC1')
+                    SetServiceStartupType = @{
+                        Automatic        = @()
+                        DelayedAutostart = @()
+                        Disabled         = @()
+                        Manual           = @()
+                    }
+                    Execute               = @{
+                        StopService  = @()
+                        KillProcess  = @()
+                        StartService = @('testService')
+                    }
+                }
+            )
+            SendMail = @{
+                To = 'bob@contoso.com'
+            }
+        }
+        $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+    }
+    It 'started when it is not running' {
+        $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
+            ServiceName = 'testService'
+            MachineName = 'PC1'
+            Status      = 'Stopped'
+        }
+
+        Mock Get-Service {
+            $testService
+        } -ParameterFilter {
+            ($ComputerName -eq $computerName) -and
+            ($Name -eq $serviceName)
+        }
+    
+        .$testScript @testParams
+
+        Should -Invoke Start-Service -Times 1 -Exactly -ParameterFilter {
+            $InputObject -eq $testService
+        }
+    }
+    It 'ignored when it is running' {
+        $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
+            ServiceName = 'testService'
+            MachineName = 'PC1'
+            Status      = 'Running'
+        }
+
+        Mock Get-Service {
+            $testService
+        } -ParameterFilter {
+            ($ComputerName -eq $computerName) -and
+            ($Name -eq $serviceName)
+        }
+    
+        .$testScript @testParams
+
+        Should -Not -Invoke Start-Service
+    }
+}

@@ -281,7 +281,16 @@ Process {
         Foreach ($task in $Tasks) {
             $i++
             foreach ($computerName in $task.ComputerName) {
-                #region Set StartupType
+                #region Test computer online
+                if (-not (Test-Connection -ComputerName $computerName -Quiet)) {
+                    $M = "Computer '$computerName' is offline"
+                    Write-Verbose $M
+                    Write-EventLog @EventErrorParams -Message $M
+                    Continue
+                }
+                #endregion
+
+                #region Set service startup type
                 foreach ($startupTypeName in $accepted.serviceStartupTypes) {
                     foreach (
                         $serviceName in 
@@ -339,6 +348,7 @@ Process {
 
                                 $result.Action = "updated StartupType from '$($result.StartupType)' to '$startupTypeName'"
 
+                                $M = "'$computerName' service '$serviceName' action 'SetServiceStartupType': {0}" -f $result.Action
                                 Write-Verbose $M
                                 Write-EventLog @EventOutParams -Message $M
                             }
@@ -346,7 +356,7 @@ Process {
                         catch {
                             $result.Error = $_
 
-                            $M = "'$computerName' service '$serviceName': $_"
+                            $M = "'$computerName' service '$serviceName' action 'SetServiceStartupType': $_"
                             Write-Warning $M
                             Write-EventLog @EventErrorParams -Message $M
 
@@ -359,25 +369,186 @@ Process {
                 }
                 #endregion
 
-                try {
-                    if ($service.Status -ne $s.Status) {
-                        if ($s.Status -eq 'Stopped') {
-                            Write-Verbose "'$computerName' stop service"
-                            $service | Stop-Service
+                #region Stop service
+                foreach ($serviceName in $task.Execute.StopService) {
+                    try {
+                        $result = [PSCustomObject]@{
+                            Task         = $i
+                            Part         = 'StopService'
+                            Date         = Get-Date
+                            ComputerName = $computerName
+                            ServiceName  = $serviceName
+                            DisplayName  = $null
+                            StartupType  = $null
+                            Status       = $null
+                            Action       = $null
+                            Error        = $null
                         }
-                        if ($s.Status -eq 'Running') {
-                            Write-Verbose "'$computerName' start service"
-                            $service | Start-Service
+    
+                        $params = @{
+                            ComputerName = $computerName
+                            Name         = $serviceName 
+                            ErrorAction  = 'Stop'
+                        }
+                        $service = Get-Service @params
+    
+                        #region Get service state before
+                        $result.DisplayName = $service.DisplayName
+                        $result.Status = $service.Status
+    
+                        $result.StartupType = if (
+                            ($service.StartType -eq 'Automatic') -and
+                            (Test-DelayedAutoStartHC @params)
+                        ) {
+                            'DelayedAutoStart'
+                        }
+                        else {
+                            $service.StartType
+                        }
+                        #endregion
+                        
+                        if ($service.Status -ne 'Stopped') {
+                            $service | Stop-Service -ErrorAction 'Stop'
+
+                            $result.Status = 'Stopped'
+
+                            $result.Action = "stopped service that was in state '$($service.Status)'"
+
+                            $M = "'$computerName' service '$serviceName' action 'StopService': {0}" -f $result.Action
+                            Write-Verbose $M
+                            Write-EventLog @EventOutParams -Message $M
                         }
                     }
-        
-                    $service = Get-Service @params
-                
-                    Write-Verbose "'$computerName' Service '$serviceName' State '$($service.Status)' StartType '$($service.StartType)'"
+                    catch {
+                        $result.Error = $_
+
+                        $M = "'$computerName' service '$serviceName' action 'StopService': $_"
+                        Write-Warning $M
+                        Write-EventLog @EventErrorParams -Message $M
+
+                        $Error.RemoveAt(0)
+                    }
+                    finally {
+                        $export.service += $result
+                    }
                 }
-                catch {
-                    Write-Warning "Failed stopping service '$serviceName' on '$computerName': $_"
-                }   
+                #endregion
+
+                #region Kill process
+                foreach ($processName in $task.Execute.KillProcess) {
+                    $params = @{
+                        ComputerName = $computerName
+                        Name         = $processName 
+                        ErrorAction  = 'Ignore'
+                    }
+                    $processes = Get-Process @params
+
+                    if (-not $processes) {
+                        $M = "'$computerName' process '$processName' action 'KillService': process not running"
+                        Write-Verbose $M
+                        Write-EventLog @EventVerboseParams -Message $M
+                        Continue
+                    }
+
+                    foreach ($process in $processes) {
+                        try {
+                            $result = [PSCustomObject]@{
+                                Task           = $i
+                                Part           = 'KillProcess'
+                                Date           = Get-Date
+                                ComputerName   = $computerName
+                                ProcessName    = $processName
+                                Description    = $process.Description
+                                Company        = $process.Company
+                                Product        = $process.Product
+                                ProductVersion = $process.ProductVersion
+                                Id             = $process.Id
+                                Action         = $null
+                                Error          = $null
+                            }
+
+                            $process | Stop-Process -EA 'Stop'
+                        }
+                        catch {
+                            $result.Error = $_
+    
+                            $M = "'$computerName' process '$processName' action 'KillProcess': $_"
+                            Write-Warning $M
+                            Write-EventLog @EventErrorParams -Message $M
+    
+                            $Error.RemoveAt(0)
+                        }
+                        finally {
+                            $export.process += $result
+                        }
+                    }
+                }
+                #endregion 
+
+                #region Start service
+                foreach ($serviceName in $task.Execute.StartService) {
+                    try {
+                        $result = [PSCustomObject]@{
+                            Task         = $i
+                            Part         = 'StartService'
+                            Date         = Get-Date
+                            ComputerName = $computerName
+                            ServiceName  = $serviceName
+                            DisplayName  = $null
+                            StartupType  = $null
+                            Status       = $null
+                            Action       = $null
+                            Error        = $null
+                        }
+    
+                        $params = @{
+                            ComputerName = $computerName
+                            Name         = $serviceName 
+                            ErrorAction  = 'Stop'
+                        }
+                        $service = Get-Service @params
+    
+                        #region Get service state before
+                        $result.DisplayName = $service.DisplayName
+                        $result.Status = $service.Status
+    
+                        $result.StartupType = if (
+                            ($service.StartType -eq 'Automatic') -and
+                            (Test-DelayedAutoStartHC @params)
+                        ) {
+                            'DelayedAutoStart'
+                        }
+                        else {
+                            $service.StartType
+                        }
+                        #endregion
+                        
+                        if ($service.Status -ne 'Running') {
+                            $service | Start-Service -ErrorAction 'Stop'
+
+                            $result.Status = 'Running'
+
+                            $result.Action = "started service that was in state '$($service.Status)'"
+
+                            $M = "'$computerName' service '$serviceName' action 'StartService': {0}" -f $result.Action
+                            Write-Verbose $M
+                            Write-EventLog @EventOutParams -Message $M
+                        }
+                    }
+                    catch {
+                        $result.Error = $_
+
+                        $M = "'$computerName' service '$serviceName' action 'StartService': $_"
+                        Write-Warning $M
+                        Write-EventLog @EventErrorParams -Message $M
+
+                        $Error.RemoveAt(0)
+                    }
+                    finally {
+                        $export.service += $result
+                    }
+                }
+                #endregion 
             }
         }    
     }
