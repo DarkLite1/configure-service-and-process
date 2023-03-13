@@ -148,9 +148,9 @@ Begin {
         $file = Get-Content $ImportFile -Raw -EA Stop | ConvertFrom-Json
         #endregion
 
-        $input = @{
+        $accepted = @{
             serviceStartupTypes = @(
-                'Automatic', 'DelayedAutostart', 'Disabled', 'Manual'
+                'Automatic', 'DelayedAutoStart', 'Disabled', 'Manual'
             )
             executionTypes      = @(
                 'StopService', 'KillProcess', 'StartService'
@@ -187,7 +187,7 @@ Begin {
 
             $serviceNamesInStartupTypes = @()
         
-            foreach ($startupTypeName in $input.serviceStartupTypes) {
+            foreach ($startupTypeName in $accepted.serviceStartupTypes) {
                 if ($properties -notContains $startupTypeName) {
                     throw "Property 'SetServiceStartupType.$startupTypeName' not found in one of the 'Tasks'."
                 }
@@ -221,7 +221,7 @@ Begin {
             #region Execute properties
             $properties = $task.Execute.PSObject.Properties.Name
             
-            foreach ($executionType in $input.executionTypes) {
+            foreach ($executionType in $accepted.executionTypes) {
                 if ($properties -notContains $executionType) {
                     throw "Property 'Execute.$executionType' not found in one of the 'Tasks'."
                 }
@@ -282,7 +282,7 @@ Process {
             $i++
             foreach ($computerName in $task.ComputerName) {
                 #region Set StartupType
-                foreach ($startupTypeName in $input.serviceStartupTypes) {
+                foreach ($startupTypeName in $accepted.serviceStartupTypes) {
                     foreach (
                         $serviceName in 
                         $task.SetServiceStartupType.$startupTypeName

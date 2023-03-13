@@ -33,8 +33,8 @@ BeforeAll {
             [String]$ServiceName
         )
     }
-    Mock  Set-DelayedAutoStartHC {}
-    Mock  Test-DelayedAutoStartHC { $true }
+    Mock Set-DelayedAutoStartHC
+    Mock Test-DelayedAutoStartHC { $true }
 
     Mock Get-Service
     Mock Invoke-Command
@@ -299,7 +299,7 @@ Describe 'send an e-mail to the admin when' {
     }
 }
 Describe 'when all tests pass' {
-    <# BeforeEach {
+    BeforeEach {
         $testJsonFile = @{
             Tasks    = @(
                 @{
@@ -320,54 +320,47 @@ Describe 'when all tests pass' {
             SendMail = @{
                 To = 'bob@contoso.com'
             }
-        } 
-    }  #>
+        }
+    }
     Context 'SetServiceStartupType' {
-        BeforeAll {
-            $testJsonFile = @{
-                Tasks    = @(
-                    @{
-                        ComputerName          = @('PC1')
-                        SetServiceStartupType = @{
-                            Automatic        = @()
-                            DelayedAutostart = @()
-                            Disabled         = @()
-                            Manual           = @()
-                        }
-                        Execute               = @{
-                            StopService  = @()
-                            KillProcess  = @()
-                            StartService = @()
+        Context 'DelayedAutoStart' {
+            Context 'is tested and fixed for startupType' {
+                It 'Automatic' {
+                    Mock Test-DelayedAutoStartHC { $false }
+
+                    Mock Get-Service {
+                        @{
+                            Status      = 'Running'
+                            StartType   = 'Automatic'
+                            Name        = 'testService'
+                            DisplayName = 'the display name'
                         }
                     }
-                )
-                SendMail = @{
-                    To = 'bob@contoso.com'
+        
+                    $testJsonFile.Tasks[0].SetServiceStartupType.DelayedAutoStart = @(
+                        'testService'
+                    )
+                    $testJsonFile | ConvertTo-Json -Depth 3 | 
+                    Out-File @testOutParams
+        
+                    .$testScript @testParams
+
+                    Should -Invoke Test-DelayedAutoStartHC -Times 1 -Exactly
+                    Should -Invoke Set-DelayedAutoStartHC -Times 1 -Exactly
+                    Should -Not -Invoke Set-Service
+                } -Tag test
+                It 'DelayedAutoStart' {
+    
                 }
             }
+            Context 'is not tested for startupType' {
+                It 'Disabled' {
 
-            Mock Get-Service {
-                @{
-                    Status      = 'Running'
-                    StartType   = 'Automatic'
-                    Name        = 'testService'
-                    DisplayName = 'the display name'
+                }
+                It 'Manual' {
+    
                 }
             }
-
-            $testJsonFile.Tasks[0].SetServiceStartupType.Manual = @(
-                'testService'
-            )
-            $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
-
-            .$testScript @testParams
         }
-        It 'test for Automatic or DelayedAutoStart' {
-            Should -Invoke Test-DelayedAutoStartHC -Scope Context -Times 1 -Exactly
-        }
-        It 'is not changed when it is correct' {
-            Should -Not -Invoke Set-Service -Scope Context -Times 1 -Exactly
-            Should -Not -Invoke Set-DelayedAutoStartHC -Scope Context -Times 1 -Exactly
-        } 
-    } -Tag test
+    }
 }
