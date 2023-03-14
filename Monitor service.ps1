@@ -469,7 +469,7 @@ Process {
 
                             $process | Stop-Process -EA 'Stop'
                             
-                            $result.Action = 'stopped running'
+                            $result.Action = 'stopped running process'
                         }
                         catch {
                             $result.Error = $_
