@@ -440,7 +440,7 @@ Process {
                         #endregion
                         
                         if ($service.Status -ne 'Stopped') {
-                            $service | Stop-Service -ErrorAction 'Stop'
+                            $service | Stop-Service -ErrorAction 'Stop' -Force
 
                             $result.Action = 'stopped service'
                             $result.Status = 'Stopped'
