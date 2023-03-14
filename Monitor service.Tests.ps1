@@ -517,7 +517,7 @@ Describe 'a service in StopService is' {
         Should -Invoke Stop-Service -Times 1 -Exactly -ParameterFilter {
             $InputObject -eq $testService
         }
-    } -Tag test
+    }
     It 'ignored when it is not running' {
         $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
             ServiceName = 'testService'
@@ -654,17 +654,17 @@ Describe 'a service in StartService is' {
         Should -Not -Invoke Start-Service
     }
 }
-Describe 'an e-mail is sent to the end user with' {
+Describe 'an e-mail is sent to the user with' {
     BeforeAll {
         $testJsonFile = @{
             Tasks    = @(
                 @{
                     ComputerName          = @('PC1')
                     SetServiceStartupType = @{
-                        Automatic        = @('testServiceStartupTypeAutomatic')
-                        DelayedAutostart = @('testServiceStartupTypeDelayed')
-                        Disabled         = @('testServiceDisabled')
-                        Manual           = @('testServiceManual')
+                        Automatic        = @()
+                        DelayedAutostart = @()
+                        Disabled         = @('testServiceManual')
+                        Manual           = @()
                     }
                     Execute               = @{
                         StopService  = @('testServiceStopped')
@@ -678,25 +678,122 @@ Describe 'an e-mail is sent to the end user with' {
             }
         }
         $testJsonFile | ConvertTo-Json -Depth 3 | Out-File @testOutParams
+
+        $testData = @{
+            Services  = @(
+                @{
+                    # SetServiceStartupType
+                    ServiceName = $testJsonFile.Tasks[0].SetServiceStartupType.Disabled[0]
+                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
+                    Status      = 'Stopped'
+                    StartType   = 'Manual'
+                    DisplayName = 'display name 1'
+                }
+                @{
+                    # StopService
+                    ServiceName = $testJsonFile.Tasks[0].Execute.StopService[0]
+                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
+                    Status      = 'Running'
+                    StartType   = 'Automatic'
+                    DisplayName = 'display name 2'
+                }
+                @{
+                    # StartService
+                    ServiceName = $testJsonFile.Tasks[0].Execute.StartService[0]
+                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
+                    Status      = 'Stopped'
+                    StartType   = 'Automatic'
+                    DisplayName = 'display name 3'
+                }
+            )
+            Processes = @(
+                @{     
+                    # KillProcess
+                    ProcessName = $testJsonFile.Tasks[0].Execute.KillProcess[0]
+                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
+                    Id          = 124
+                }
+            )
+        }
+        
+        #region SetServiceStartupType
+        Mock Get-Service {
+            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[0]
+        } -ParameterFilter {
+            $Name -eq $testData.Services[0].ServiceName
+        }
+        #endregion
+
+        #region StopService
+        Mock Get-Service {
+            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[1]
+        } -ParameterFilter {
+            $Name -eq $testData.Services[1].ServiceName
+        }
+        #endregion
+
+        #region StartService
+        Mock Get-Service {
+            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[2]
+        } -ParameterFilter {
+            $Name -eq $testData.Services[2].ServiceName
+        }
+        #endregion
+
+        #region KillProcess
+        Mock Get-Process {
+            New-MockObject -Type 'System.Diagnostics.Process' -Properties $testData.Processes[0]
+        } -ParameterFilter {
+            $Name -eq $testData.Processes[0].ProcessName
+        }
+        #endregion
+
+        .$testScript @testParams
+
+        $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Report.xlsx'
     }
     Context 'an Excel file in attachment' {
         Context "with worksheet 'Services'" {
             BeforeAll {
                 $testExportedExcelRows = @(
                     @{
+                        # SetServiceStartupType
                         Task         = 1
                         Part         = 'SetServiceStartupType'
-                        # Date         = Get-Date
-                        ComputerName = 'PC1'
-                        ServiceName  = 'testService'
-                        DisplayName  = $null
-                        StartupType  = $null
-                        Status       = $null
-                        Action       = $null
+                        ComputerName = $testData.Services[0].MachineName
+                        ServiceName  = $testData.Services[0].ServiceName
+                        DisplayName  = $testData.Services[0].DisplayName
+                        Status       = $testData.Services[0].Status
+                        StartupType  = 'Disabled'
+                        Action       = "updated StartupType from '$($testData.Services[0].StartType)' to 'Disabled'"
+                        Error        = $null
+                    }
+                    @{
+                        # StopService
+                        Task         = 1
+                        Part         = 'StopService'
+                        ComputerName = $testData.Services[1].MachineName
+                        ServiceName  = $testData.Services[1].ServiceName
+                        DisplayName  = $testData.Services[1].DisplayName
+                        Status       = 'Stopped'
+                        StartupType  = $testData.Services[1].StartType
+                        Action       = "stopped service that was in state '$($testData.Services[1].Status)'"
+                        Error        = $null
+                    }
+                    @{
+                        # StartService
+                        Task         = 1
+                        Part         = 'StopService'
+                        ComputerName = $testData.Services[2].MachineName
+                        ServiceName  = $testData.Services[2].ServiceName
+                        DisplayName  = $testData.Services[2].DisplayName
+                        Status       = 'Running'
+                        StartupType  = $testData.Services[2].StartType
+                        Action       = "started service that was in state '$($testData.Services[2].Status)'"
                         Error        = $null
                     }
                 )
-    
+
                 $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Services'
             }
             It 'to the log folder' {
@@ -708,25 +805,22 @@ Describe 'an e-mail is sent to the end user with' {
             It 'with the correct data in the rows' {
                 foreach ($testRow in $testExportedExcelRows) {
                     $actualRow = $actual | Where-Object {
-                        $_.ComputerName -eq $testRow.ComputerName
+                        $_.ServiceName -eq $testRow.ServiceName
                     }
-                    $actualRow.Drive | Should -Be $testRow.Drive
-                    $actualRow.Date.ToString('yyyyMMdd HHmm') | 
-                    Should -Be $testRow.Date.ToString('yyyyMMdd HHmm')
-                    $actualRow.Size | Should -Be $testRow.Size
-                    $actualRow.Encrypted | Should -Be $testRow.Encrypted
-                    $actualRow.VolumeStatus | Should -Be $testRow.VolumeStatus
+                    $actualRow.Task | Should -Be $testRow.Task
+                    $actualRow.Part | Should -Be $testRow.Part
+                    $actualRow.ComputerName | Should -Be $testRow.ComputerName
+                    $actualRow.DisplayName | Should -Be $testRow.DisplayName
+                    $actualRow.ServiceName | Should -Be $testRow.ServiceName
                     $actualRow.Status | Should -Be $testRow.Status
-                    $actualRow.PendingReboot | Should -Be $testRow.PendingReboot
-                    $actualRow.KeyProtectorRecoveryPassword | 
-                    Should -Be $testRow.KeyProtectorRecoveryPassword
-                    $actualRow.KeyProtectorTpm | 
-                    Should -Be $testRow.KeyProtectorTpm
-                    $actualRow.KeyProtectorOther | 
-                    Should -Be $testRow.KeyProtectorOther
+                    $actualRow.StartupType | Should -Be $testRow.StartupType
+                    $actualRow.Action | Should -Be $testRow.Action
+                    $actualRow.Error | Should -Be $testRow.Error
+                    $actualRow.Date.ToString('yyyyMMdd HHmm') | 
+                    Should -Not -BeNullOrEmpty
                 }
             }
-        }
+        } -Tag test
         Context "with worksheet 'Processes'" {
             BeforeAll {
                 $testExportedExcelRows = @(
@@ -774,4 +868,4 @@ Describe 'an e-mail is sent to the end user with' {
             }
         }
     }
-} -Skip
+}

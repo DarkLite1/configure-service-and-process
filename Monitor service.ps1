@@ -347,9 +347,9 @@ Process {
                                     $service | Set-Service @setParams    
                                 }
 
-                                $result.StartupType = $startupTypeName
-
                                 $result.Action = "updated StartupType from '$($result.StartupType)' to '$startupTypeName'"
+
+                                $result.StartupType = $startupTypeName
 
                                 $M = "'$computerName' service '$serviceName' action 'SetServiceStartupType': {0}" -f $result.Action
                                 Write-Verbose $M
