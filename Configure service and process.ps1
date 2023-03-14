@@ -142,7 +142,8 @@ Begin {
                         [parameter(Mandatory)]
                         [String]$ProcessName
                     )
-                    Get-Process -Name $ProcessName | Stop-Process -EA Stop
+                    Get-Process -Name $ProcessName | 
+                    Stop-Process -EA Stop -Force
                 }       
             }
             catch {
