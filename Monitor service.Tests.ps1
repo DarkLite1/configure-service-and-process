@@ -822,31 +822,22 @@ Describe 'an e-mail is sent to the user with' {
                     Should -Not -BeNullOrEmpty
                 }
             }
-        } -Tag test
+        }
         Context "with worksheet 'Processes'" {
             BeforeAll {
                 $testExportedExcelRows = @(
                     @{
-                        ComputerName = $testData[0].ComputerName
-                        Date         = $testData[0].Date
-                        Activated    = $testData[0].Tpm.TpmActivated
-                        Present      = $testData[0].Tpm.TpmPresent
-                        Enabled      = $testData[0].Tpm.TpmEnabled
-                        Ready        = $testData[0].Tpm.TpmReady
-                        Owned        = $testData[0].Tpm.TpmOwned
-                    },
-                    @{
-                        ComputerName = $testDataNew[0].ComputerName
-                        Date         = $testDataNew[0].Date
-                        Activated    = $testDataNew[0].Tpm.TpmActivated
-                        Present      = $testDataNew[0].Tpm.TpmPresent
-                        Enabled      = $testDataNew[0].Tpm.TpmEnabled
-                        Ready        = $testDataNew[0].Tpm.TpmReady
-                        Owned        = $testDataNew[0].Tpm.TpmOwned
+                        Task           = $i
+                        Part           = 'KillProcess'
+                        ComputerName   = $testData.Processes[0].MachineName
+                        ProcessName    = $testData.Processes[0].ProcessName
+                        Id             = $testData.Processes[0].Id
+                        Action         = $null
+                        Error          = $null
                     }
                 )
     
-                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'TpmStatuses'
+                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Processes'
             }
             It 'to the log folder' {
                 $testExcelLogFile | Should -Not -BeNullOrEmpty
@@ -857,15 +848,17 @@ Describe 'an e-mail is sent to the user with' {
             It 'with the correct data in the rows' {
                 foreach ($testRow in $testExportedExcelRows) {
                     $actualRow = $actual | Where-Object {
-                        $_.ComputerName -eq $testRow.ComputerName
+                        $_.ProcessName -eq $testRow.ProcessName
                     }
-                    $actualRow.Activated | Should -Be $testRow.Activated
+                    $actualRow.Task | Should -Be $testRow.Task
+                    $actualRow.Part | Should -Be $testRow.Part
+                    $actualRow.ComputerName | Should -Be $testRow.ComputerName
+                    $actualRow.ProcessName | Should -Be $testRow.ProcessName
+                    $actualRow.Id | Should -Be $testRow.Id
+                    $actualRow.Action | Should -Be $testRow.Action
+                    $actualRow.Error | Should -Be $testRow.Error
                     $actualRow.Date.ToString('yyyyMMdd HHmm') | 
-                    Should -Be $testRow.Date.ToString('yyyyMMdd HHmm')
-                    $actualRow.Present | Should -Be $testRow.Present
-                    $actualRow.Enabled | Should -Be $testRow.Enabled
-                    $actualRow.Ready | Should -Be $testRow.Ready
-                    $actualRow.Owned | Should -Be $testRow.Owned
+                    Should -Not -BeNullOrEmpty
                 }
             }
         }
