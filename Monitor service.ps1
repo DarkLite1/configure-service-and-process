@@ -645,39 +645,44 @@ End {
         }
      
         #region Create HTML table
-        $htmlTable = "
-        <table>
-            <tr>
-                <th colspan=`"2`">Services</th>
-            </tr>
-            <tr>
-                <td>Rows</td>
-                <td>$($count.service.total)</td>
-            </tr>
-            <tr>
-                <td>Actions</td>
-                <td>$($count.service.action)</td>
-            </tr>
-            <tr>
-                <td>Errors</td>
-                <td>$($count.service.error)</td>
-            </tr>
-            <tr>
-                <th colspan=`"2`">Processes</th>
-            </tr>
-            <tr>
-                <td>Total</td>
-                <td>$($count.process.total)</td>
-            </tr>
-            <tr>
-                <td>Actions</td>
-                <td>$($count.process.action)</td>
-            </tr>
-            <tr>
-                <td>Errors</td>
-                <td>$($count.process.error)</td>
-            </tr>
-        </table>" 
+        $htmlTable = '<table>{0}{1}</table>' -f $(
+            if ($count.service.total) {
+                "<tr>
+                    <th colspan=`"2`">Services</th>
+                </tr>
+                <tr>
+                    <td>Rows</td>
+                    <td>$($count.service.total)</td>
+                </tr>
+                <tr>
+                    <td>Actions</td>
+                    <td>$($count.service.action)</td>
+                </tr>
+                <tr>
+                    <td>Errors</td>
+                    <td>$($count.service.error)</td>
+                </tr>"
+            },
+            $(
+                if ($count.process.total) {
+                    "<tr>
+                        <th colspan=`"2`">Processes</th>
+                    </tr>
+                    <tr>
+                        <td>Rows</td>
+                        <td>$($count.process.total)</td>
+                    </tr>
+                    <tr>
+                        <td>Actions</td>
+                        <td>$($count.process.action)</td>
+                    </tr>
+                    <tr>
+                        <td>Errors</td>
+                        <td>$($count.process.error)</td>
+                    </tr>"
+                }
+            )
+        )
         #endregion
      
         #region Send mail
@@ -685,12 +690,11 @@ End {
             <p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>
             $systemErrorHtmlList
             $htmlTable
-            {0}" -f 
-        $(
-            if ($mailParams.Attachments) {
-                '<p><i>* Check the attachment for details</i></p>'
-            }
-        )
+            {0}" -f $(
+                if ($mailParams.Attachments) {
+                    '<p><i>* Check the attachment for details</i></p>'
+                }
+            )
      
         Get-ScriptRuntimeHC -Stop
         Send-MailHC @mailParams
