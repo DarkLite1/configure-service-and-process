@@ -654,7 +654,7 @@ Describe 'a service in StartService is' {
         Should -Not -Invoke Start-Service
     }
 }
-Describe 'an e-mail is sent to the user with' {
+Describe 'after the script runs' {
     BeforeAll {
         $testJsonFile = @{
             Tasks    = @(
@@ -754,7 +754,7 @@ Describe 'an e-mail is sent to the user with' {
 
         $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Report.xlsx'
     }
-    Context 'an Excel file in attachment' {
+    Context 'an Excel file is created' {
         Context "with worksheet 'Services'" {
             BeforeAll {
                 $testExportedExcelRows = @(
@@ -798,7 +798,7 @@ Describe 'an e-mail is sent to the user with' {
 
                 $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Services'
             }
-            It 'to the log folder' {
+            It 'in the log folder' {
                 $testExcelLogFile | Should -Not -BeNullOrEmpty
             }
             It 'with the correct total rows' {
@@ -839,7 +839,7 @@ Describe 'an e-mail is sent to the user with' {
     
                 $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Processes'
             }
-            It 'to the log folder' {
+            It 'in the log folder' {
                 $testExcelLogFile | Should -Not -BeNullOrEmpty
             }
             It 'with the correct total rows' {
@@ -861,6 +861,47 @@ Describe 'an e-mail is sent to the user with' {
                     Should -Not -BeNullOrEmpty
                 }
             }
-        } -tag test
+        }
+    }
+    Context 'an e-mail is sent to the user' {
+        BeforeAll {
+            $testMail = @{
+                Header      = $testParams.ScriptName
+                To          = $testJsonFile.SendMail.To
+                Bcc         = $ScriptAdmin
+                Priority    = 'Normal'
+                Subject     = '3 services, 1 process'
+                Message     = "*<p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>*
+                *<th*>Services</th>*
+                *<td>Rows</td>*3*
+                *<td>Actions</td>*3*
+                *<td>Errors</td>*0*
+                *<th*>Processes</th>*
+                *<td>Rows</td>*1*
+                *<td>Actions</td>*1*
+                *<td>Errors</td>*0*Check the attachment for details*"
+                Attachments = $testExcelLogFile.FullName
+            }
+        }
+        It 'Send-MailHC is called with the correct arguments' {
+            $mailParams.Header | Should -Be $testMail.Header
+            $mailParams.To | Should -Be $testMail.To
+            $mailParams.Bcc | Should -Be $testMail.Bcc
+            $mailParams.Priority | Should -Be $testMail.Priority
+            $mailParams.Subject | Should -Be $testMail.Subject
+            $mailParams.Message | Should -BeLike $testMail.Message
+            $mailParams.Attachments | Should -Be $testMail.Attachments
+        }
+        It 'Send-MailHC is called once' {
+            Should -Invoke Send-MailHC -Exactly 1 -Scope Describe -ParameterFilter {
+                ($Header -eq $testMail.Header) -and
+                ($To -eq $testMail.To) -and
+                ($Bcc -eq $testMail.Bcc) -and
+                ($Priority -eq $testMail.Priority) -and
+                ($Subject -eq $testMail.Subject) -and
+                ($Attachments -like $testMail.Attachments) -and
+                ($Message -like $testMail.Message)
+            }
+        }
     }
 }

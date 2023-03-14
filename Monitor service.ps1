@@ -576,7 +576,7 @@ End {
             Bcc       = $ScriptAdmin
             Priority  = 'Normal'
             LogFolder = $logParams.LogFolder
-            Header    = $sendMailHeader
+            Header    = $ScriptName
             Save      = "$logFile - Mail.html"
         }
 
