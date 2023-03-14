@@ -122,6 +122,35 @@ Begin {
                 throw "Failed to enable 'DelayedAutostart': $M"
             }
         }
+        Function Stop-ProcessHC {
+            Param (
+                [parameter(Mandatory)]
+                [String]$ComputerName,
+                [parameter(Mandatory)]
+                [alias('Name')]
+                [String]$ProcessName
+            )
+
+            try {
+                $params = @{
+                    ComputerName = $ComputerName
+                    ArgumentList = $ProcessName 
+                    ErrorAction  = 'Stop'
+                }
+                Invoke-Command @params -ScriptBlock {
+                    Param (
+                        [parameter(Mandatory)]
+                        [String]$ProcessName
+                    )
+                    Get-Process -Name $ProcessName | Stop-Process -EA Stop
+                }       
+            }
+            catch {
+                $M = $_
+                $Error.RemoveAt(0)
+                throw "Failed to stop process '$ProcessName': $M"
+            }
+        }
 
         Import-EventLogParamsHC -Source $ScriptName
         Write-EventLog @EventStartParams
@@ -412,8 +441,7 @@ Process {
                         if ($service.Status -ne 'Stopped') {
                             $service | Stop-Service -ErrorAction 'Stop'
 
-                            $result.Action = "stopped service that was in state '$($service.Status)'"
-
+                            $result.Action = 'stopped service'
                             $result.Status = 'Stopped'
 
                             $M = "'$computerName' service '$serviceName' action 'StopService': {0}" -f $result.Action
@@ -455,18 +483,18 @@ Process {
                     foreach ($process in $processes) {
                         try {
                             $result = [PSCustomObject]@{
-                                Task           = $i
-                                Part           = 'KillProcess'
-                                Date           = Get-Date
-                                ComputerName   = $computerName
-                                ProcessName    = $processName
-                                Description    = $process.Description
-                                Id             = $process.Id
-                                Action         = $null
-                                Error          = $null
+                                Task         = $i
+                                Part         = 'KillProcess'
+                                Date         = Get-Date
+                                ComputerName = $computerName
+                                ProcessName  = $processName
+                                Description  = $process.Description
+                                Id           = $process.Id
+                                Action       = $null
+                                Error        = $null
                             }
 
-                            $process | Stop-Process -EA 'Stop'
+                            Stop-ProcessHC -ComputerName $computerName -ProcessName $processName -EA Stop
                             
                             $result.Action = 'stopped running process'
                         }
@@ -527,8 +555,7 @@ Process {
                         if ($service.Status -ne 'Running') {
                             $service | Start-Service -ErrorAction 'Stop'
 
-                            $result.Action = "started service that was in state '$($service.Status)'"
-
+                            $result.Action = 'started service'
                             $result.Status = 'Running'
 
                             $M = "'$computerName' service '$serviceName' action 'StartService': {0}" -f $result.Action

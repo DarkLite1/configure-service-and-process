@@ -33,6 +33,15 @@ BeforeAll {
             [String]$ServiceName
         )
     }
+    Function Stop-ProcessHC {
+        Param (
+            [parameter(Mandatory)]
+            [String]$ComputerName,
+            [parameter(Mandatory)]
+            [alias('Name')]
+            [String]$ProcessName
+        )
+    }
     Mock Set-DelayedAutoStartHC
     Mock Test-DelayedAutoStartHC { $true }
 
@@ -43,7 +52,7 @@ BeforeAll {
     Mock Set-Service
     Mock Start-Process
     Mock Start-Service
-    Mock Stop-Process
+    Mock Stop-ProcessHC
     Mock Stop-Service
     Mock Test-Connection { $true }
     Mock Write-EventLog
@@ -578,16 +587,17 @@ Describe 'a process in KillProcess is' {
 
         .$testScript @testParams
 
-        Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter {
-            $InputObject -eq $testProcess
+        Should -Invoke Stop-ProcessHC -Times 1 -Exactly -ParameterFilter {
+            ($ComputerName -eq 'PC1') -and
+            ($ProcessName -eq 'testProcess')
         }
-    }
+    } -Tag test
     It 'ignored when it is not running' {
         Mock Get-Process {}
 
         .$testScript @testParams
 
-        Should -Not -Invoke Stop-Process
+        Should -Not -Invoke Stop-ProcessHC
     }
 }
 Describe 'a service in StartService is' {
@@ -779,7 +789,7 @@ Describe 'after the script runs' {
                         DisplayName  = $testData.Services[1].DisplayName
                         Status       = 'Stopped'
                         StartupType  = 'DelayedAutoStart'
-                        Action       = "stopped service that was in state '$($testData.Services[1].Status)'"
+                        Action       = 'stopped service'
                         Error        = $null
                     }
                     @{
@@ -791,7 +801,7 @@ Describe 'after the script runs' {
                         DisplayName  = $testData.Services[2].DisplayName
                         Status       = 'Running'
                         StartupType  = 'DelayedAutoStart'
-                        Action       = "started service that was in state '$($testData.Services[2].Status)'"
+                        Action       = 'started service'
                         Error        = $null
                     }
                 )
@@ -827,13 +837,13 @@ Describe 'after the script runs' {
             BeforeAll {
                 $testExportedExcelRows = @(
                     @{
-                        Task           = $i
-                        Part           = 'KillProcess'
-                        ComputerName   = $testData.Processes[0].MachineName
-                        ProcessName    = $testData.Processes[0].ProcessName
-                        Id             = $testData.Processes[0].Id
-                        Action         = 'stopped running process'
-                        Error          = $null
+                        Task         = $i
+                        Part         = 'KillProcess'
+                        ComputerName = $testData.Processes[0].MachineName
+                        ProcessName  = $testData.Processes[0].ProcessName
+                        Id           = $testData.Processes[0].Id
+                        Action       = 'stopped running process'
+                        Error        = $null
                     }
                 )
     
@@ -904,4 +914,4 @@ Describe 'after the script runs' {
             }
         }
     }
-}
+} -tag test
