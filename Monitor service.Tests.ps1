@@ -517,7 +517,7 @@ Describe 'a service in StopService is' {
         Should -Invoke Stop-Service -Times 1 -Exactly -ParameterFilter {
             $InputObject -eq $testService
         }
-    }
+    } -Tag test
     It 'ignored when it is not running' {
         $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{     
             ServiceName = 'testService'

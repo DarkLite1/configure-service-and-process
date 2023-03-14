@@ -645,7 +645,8 @@ End {
         }
      
         #region Create HTML table
-        $htmlTable = '<table>{0}{1}</table>' -f $(
+        $htmlTable = '<table>{0}{1}</table>' -f 
+        $(
             if ($count.service.total) {
                 "<tr>
                     <th colspan=`"2`">Services</th>
@@ -662,10 +663,11 @@ End {
                     <td>Errors</td>
                     <td>$($count.service.error)</td>
                 </tr>"
-            },
-            $(
-                if ($count.process.total) {
-                    "<tr>
+            }
+        ),
+        $(
+            if ($count.process.total) {
+                "<tr>
                         <th colspan=`"2`">Processes</th>
                     </tr>
                     <tr>
@@ -680,8 +682,7 @@ End {
                         <td>Errors</td>
                         <td>$($count.process.error)</td>
                     </tr>"
-                }
-            )
+            }
         )
         #endregion
      
@@ -691,10 +692,10 @@ End {
             $systemErrorHtmlList
             $htmlTable
             {0}" -f $(
-                if ($mailParams.Attachments) {
-                    '<p><i>* Check the attachment for details</i></p>'
-                }
-            )
+            if ($mailParams.Attachments) {
+                '<p><i>* Check the attachment for details</i></p>'
+            }
+        )
      
         Get-ScriptRuntimeHC -Stop
         Send-MailHC @mailParams
