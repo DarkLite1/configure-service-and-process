@@ -462,15 +462,14 @@ Process {
                                 ComputerName   = $computerName
                                 ProcessName    = $processName
                                 Description    = $process.Description
-                                Company        = $process.Company
-                                Product        = $process.Product
-                                ProductVersion = $process.ProductVersion
                                 Id             = $process.Id
                                 Action         = $null
                                 Error          = $null
                             }
 
                             $process | Stop-Process -EA 'Stop'
+                            
+                            $result.Action = 'stopped running'
                         }
                         catch {
                             $result.Error = $_

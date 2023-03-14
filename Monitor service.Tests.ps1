@@ -832,7 +832,7 @@ Describe 'an e-mail is sent to the user with' {
                         ComputerName   = $testData.Processes[0].MachineName
                         ProcessName    = $testData.Processes[0].ProcessName
                         Id             = $testData.Processes[0].Id
-                        Action         = $null
+                        Action         = 'stopped running process'
                         Error          = $null
                     }
                 )
@@ -861,6 +861,6 @@ Describe 'an e-mail is sent to the user with' {
                     Should -Not -BeNullOrEmpty
                 }
             }
-        }
+        } -tag test
     }
 }
