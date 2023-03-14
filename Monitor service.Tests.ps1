@@ -748,6 +748,8 @@ Describe 'an e-mail is sent to the user with' {
         }
         #endregion
 
+        Mock Test-DelayedAutoStartHC { $true }
+
         .$testScript @testParams
 
         $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Report.xlsx'
@@ -776,19 +778,19 @@ Describe 'an e-mail is sent to the user with' {
                         ServiceName  = $testData.Services[1].ServiceName
                         DisplayName  = $testData.Services[1].DisplayName
                         Status       = 'Stopped'
-                        StartupType  = $testData.Services[1].StartType
+                        StartupType  = 'DelayedAutoStart'
                         Action       = "stopped service that was in state '$($testData.Services[1].Status)'"
                         Error        = $null
                     }
                     @{
                         # StartService
                         Task         = 1
-                        Part         = 'StopService'
+                        Part         = 'StartService'
                         ComputerName = $testData.Services[2].MachineName
                         ServiceName  = $testData.Services[2].ServiceName
                         DisplayName  = $testData.Services[2].DisplayName
                         Status       = 'Running'
-                        StartupType  = $testData.Services[2].StartType
+                        StartupType  = 'DelayedAutoStart'
                         Action       = "started service that was in state '$($testData.Services[2].Status)'"
                         Error        = $null
                     }

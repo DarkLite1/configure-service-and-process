@@ -413,9 +413,9 @@ Process {
                         if ($service.Status -ne 'Stopped') {
                             $service | Stop-Service -ErrorAction 'Stop'
 
-                            $result.Status = 'Stopped'
-
                             $result.Action = "stopped service that was in state '$($service.Status)'"
+
+                            $result.Status = 'Stopped'
 
                             $M = "'$computerName' service '$serviceName' action 'StopService': {0}" -f $result.Action
                             Write-Verbose $M
@@ -529,9 +529,9 @@ Process {
                         if ($service.Status -ne 'Running') {
                             $service | Start-Service -ErrorAction 'Stop'
 
-                            $result.Status = 'Running'
-
                             $result.Action = "started service that was in state '$($service.Status)'"
+
+                            $result.Status = 'Running'
 
                             $M = "'$computerName' service '$serviceName' action 'StartService': {0}" -f $result.Action
                             Write-Verbose $M
