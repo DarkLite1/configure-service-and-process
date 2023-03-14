@@ -135,7 +135,6 @@ Begin {
                 Name         = $ScriptName
                 Date         = 'ScriptStartTime'
                 NoFormatting = $true
-                # Unique       = $true
             }
             $logFile = New-LogFileNameHC @logParams
         }
