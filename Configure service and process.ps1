@@ -580,10 +580,57 @@ Process {
 
     Try {
         Foreach ($task in $Tasks) {
+            $invokeParams = @{
+                ScriptBlock  = $scriptBlock
+                ArgumentList = $task.SetServiceStartupType.Automatic,
+                $task.SetServiceStartupType.DelayedAutoStart,
+                $task.SetServiceStartupType.Disabled,
+                $task.SetServiceStartupType.Manual,
+                $task.Execute.StopService,
+                $task.Execute.KillProcess,
+                $task.Execute.StartService
+            }
+
             foreach ($job in $task.Jobs) {
+                $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.KillProcess '{6}' Execute.StartService '{7}'" -f
+                $job.ComputerName,
+                $invokeParams.ArgumentList[0], $invokeParams.ArgumentList[1],
+                $invokeParams.ArgumentList[2], $invokeParams.ArgumentList[3],
+                $invokeParams.ArgumentList[4], $invokeParams.ArgumentList[5],
+                $invokeParams.ArgumentList[6]
+                Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
+                #region Start job
+                $computerName = $job.ComputerName
 
-                & $scriptBlock
+                try {
+                    $job.Session = New-PSSessionHC -ComputerName $computerName
+                    $invokeParams += @{
+                        Session = $job.Session
+                        AsJob   = $true
+                    }
+                    $job.Object = Invoke-Command @invokeParams
+                }
+                catch {
+                    $M = "Failed creating a session to '$computerName': $_"
+                    $job.Errors += $M
+                    $Error.RemoveAt(0)
+                    Write-Warning $M
+                    Write-EventLog @EventWarnParams -Message $M
+                    Continue
+                }
+                #endregion
+
+                #region Wait for max running jobs
+                $waitJobParams = @{
+                    Job        = $Tasks.Jobs.Object | Where-Object { $_ }
+                    MaxThreads = $MaxConcurrentJobs
+                }
+
+                if ($waitJobParams.Job) {
+                    Wait-MaxRunningJobsHC @waitJobParams
+                }
+                #endregion
             }
         }
     }
