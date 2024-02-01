@@ -238,77 +238,78 @@ Begin {
                     }
                 }
                 #endregion
+
+                #region Test Execute
+                $properties = $task.Execute.PSObject.Properties.Name
+
+                foreach ($executionType in $accepted.executionTypes) {
+                    if ($properties -notContains $executionType) {
+                        throw "Property 'Execute.$executionType' not found"
+                    }
+                }
+                #endregion
+
+                #region Test StartupType Disabled and StartService
+                foreach (
+                    $disabledService in
+                    $task.SetServiceStartupType.Disabled
+                ) {
+                    if ($task.Execute.StartService -contains $disabledService) {
+                        throw "Service '$disabledService' cannot have StartupType 'Disabled' and 'StartService' at the same time"
+                    }
+                }
+                #endregion
+
+                #region Test Tasks have an action
+                $actionInTask = $false
+
+                foreach ($startupTypeName in $accepted.serviceStartupTypes) {
+                    $task.SetServiceStartupType.$startupTypeName =
+                    $task.SetServiceStartupType.$startupTypeName |
+                    Where-Object { $_ }
+
+                    if ($task.SetServiceStartupType.$startupTypeName) {
+                        $actionInTask = $true
+                    }
+                }
+
+                foreach ($executionType in $accepted.executionTypes) {
+                    $task.Execute.$executionType = $task.Execute.$executionType |
+                    Where-Object { $_ }
+
+                    if ($task.Execute.$executionType) {
+                        $actionInTask = $true
+                    }
+                }
+
+                if (-not $actionInTask) {
+                    throw "Input file '$ImportFile': Contains a task where properties 'SetServiceStartupType' and 'Execute' are both empty."
+                }
+                #endregion
+
+                #region Test duplicate names in SetServiceStartupType
+                $serviceNamesInStartupTypes = @()
+
+                foreach ($startupTypeName in $accepted.serviceStartupTypes) {
+                    foreach (
+                        $serviceName in
+                        $task.SetServiceStartupType.$startupTypeName
+                    ) {
+                        $serviceNamesInStartupTypes += $serviceName
+                    }
+                }
+
+                if (
+                    $duplicateServiceNamesInStartupType = $serviceNamesInStartupTypes | Group-Object |
+                    Where-Object { ($_.Name) -and ($_.Count -gt 1) }
+                ) {
+                    throw "Service '$($duplicateServiceNamesInStartupType.Name)' can only have one StartupType."
+                }
+                #endregion
             }
         }
         catch {
             throw "Input file '$ImportFile': $_"
-        }
-        #endregion
-
-        #region Convert .json file
-        foreach ($task in $Tasks) {
-            $actionInTask = $false
-
-            #region SetServiceStartupType properties
-            $serviceNamesInStartupTypes = @()
-
-            foreach ($startupTypeName in $accepted.serviceStartupTypes) {
-                #region Remove empty values from arrays
-                $task.SetServiceStartupType.$startupTypeName =
-                $task.SetServiceStartupType.$startupTypeName |
-                Where-Object { $_ }
-                #endregion
-
-                if ($task.SetServiceStartupType.$startupTypeName) {
-                    $actionInTask = $true
-                }
-
-                foreach (
-                    $serviceName in
-                    $task.SetServiceStartupType.$startupTypeName
-                ) {
-                    $serviceNamesInStartupTypes += $serviceName
-                }
-            }
-
-            if (
-                $duplicateServiceNamesInStartupType = $serviceNamesInStartupTypes | Group-Object |
-                Where-Object { ($_.Name) -and ($_.Count -gt 1) }
-            ) {
-                throw "Service '$($duplicateServiceNamesInStartupType.Name)' can only have one StartupType."
-            }
-            #endregion
-
-            #region Execute properties
-            $properties = $task.Execute.PSObject.Properties.Name
-
-            foreach ($executionType in $accepted.executionTypes) {
-                if ($properties -notContains $executionType) {
-                    throw "Property 'Execute.$executionType' not found in one of the 'Tasks'."
-                }
-
-                #region Remove empty values from arrays
-                $task.Execute.$executionType = $task.Execute.$executionType |
-                Where-Object { $_ }
-                #endregion
-
-                if ($task.Execute.$executionType) {
-                    $actionInTask = $true
-                }
-            }
-            #endregion
-
-            #region Test incorrect input
-            if (-not $actionInTask) {
-                throw "Input file '$ImportFile': Contains a task where properties 'SetServiceStartupType' and 'Execute' are both empty."
-            }
-
-            foreach ($disabledService in $task.SetServiceStartupType.Disabled) {
-                if ($task.Execute.StartService -contains $disabledService) {
-                    throw "Service '$disabledService' cannot have StartupType 'Disabled' and 'StartService' at the same time"
-                }
-            }
-            #endregion
         }
         #endregion
     }
