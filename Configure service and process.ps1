@@ -45,11 +45,19 @@ Param(
 )
 
 Begin {
-    Try {
+    $scriptBlock = {
+        Param (
+            [String[]]$SetServiceAutomatic,
+            [String[]]$SetServiceDelayedAutoStart,
+            [String[]]$SetServiceDisabled,
+            [String[]]$SetServiceManual,
+            [String[]]$ExecuteStopService,
+            [String[]]$ExecuteKillProcess,
+            [String[]]$ExecuteStartService
+        )
+
         Function Test-DelayedAutoStartHC {
             Param (
-                [parameter(Mandatory)]
-                [String]$ComputerName,
                 [parameter(Mandatory)]
                 [alias('Name')]
                 [String]$ServiceName
@@ -57,105 +65,316 @@ Begin {
 
             try {
                 $params = @{
-                    ComputerName = $ComputerName
-                    ArgumentList = $ServiceName
-                    ErrorAction  = 'Stop'
+                    Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
+                    ErrorAction = 'Stop'
                 }
-                Invoke-Command @params -ScriptBlock {
-                    Param (
-                        [parameter(Mandatory)]
-                        [String]$ServiceName
-                    )
+                $property = Get-ItemProperty @params
 
-                    $params = @{
-                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-                        ErrorAction = 'Stop'
-                    }
-                    $property = Get-ItemProperty @params
-
-                    if (
+                if (
                     ($property.Start -eq 2) -and
                     ($property.DelayedAutostart -eq 1)
-                    ) {
-                        $true
-                    }
-                    else {
-                        $false
-                    }
+                ) {
+                    $true
+                }
+                else {
+                    $false
                 }
             }
             catch {
-                $M = $_
-                $Error.RemoveAt(0)
+                $M = $_; $Error.RemoveAt(0)
                 throw "Failed testing if 'DelayedAutostart' is set: $M"
             }
         }
         Function Set-DelayedAutoStartHC {
             Param (
                 [parameter(Mandatory)]
-                [String]$ComputerName,
-                [parameter(Mandatory)]
                 [alias('Name')]
                 [String]$ServiceName
             )
 
             try {
-                $params = @{
-                    ComputerName = $ComputerName
-                    ArgumentList = $ServiceName
-                    ErrorAction  = 'Stop'
-                }
-                Invoke-Command @params -ScriptBlock {
-                    Param (
-                        [parameter(Mandatory)]
-                        [String]$ServiceName
-                    )
+                Param (
+                    [parameter(Mandatory)]
+                    [String]$ServiceName
+                )
 
-                    $params = @{
-                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
-                        ErrorAction = 'Stop'
-                    }
-                    Set-ItemProperty @params -Name 'Start' -Value 2
-                    Set-ItemProperty @params -Name 'DelayedAutostart' -Value 1
+                $params = @{
+                    Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
+                    ErrorAction = 'Stop'
                 }
+                Set-ItemProperty @params -Name 'Start' -Value 2
+                Set-ItemProperty @params -Name 'DelayedAutostart' -Value 1
             }
             catch {
-                $M = $_
-                $Error.RemoveAt(0)
+                $M = $_; $Error.RemoveAt(0)
                 throw "Failed to enable 'DelayedAutostart': $M"
+            }
+        }
+        Function Set-ServiceStartupTypeHC {
+            Param (
+                [parameter(Mandatory)]
+                [alias('Name')]
+                [String]$ServiceName,
+                [ValidateSet(
+                    'Automatic', 'DelayedAutoStart',
+                    'Disabled', 'Manual'
+                )]
+                [Parameter(Mandatory)]
+                [String]$StartupTypeName
+            )
+            try {
+                $result = [PSCustomObject]@{
+                    Part        = 'SetServiceStartupType'
+                    Date        = Get-Date
+                    ServiceName = $ServiceName
+                    DisplayName = $null
+                    StartupType = $null
+                    Status      = $null
+                    Action      = $null
+                    Error       = $null
+                }
+
+                #region Get service state
+                $params = @{
+                    Name        = $ServiceName
+                    ErrorAction = 'Stop'
+                }
+                $service = Get-Service @params
+
+                $result.DisplayName = $service.DisplayName
+                $result.Status = $service.Status
+
+                $result.StartupType = if (
+                    ($service.StartType -eq 'Automatic') -and
+                    (Test-DelayedAutoStartHC @params)
+                ) {
+                    'DelayedAutoStart'
+                }
+                else {
+                    $service.StartType
+                }
+                #endregion
+
+                #region Set service startup type
+                if ($StartupTypeName -ne $result.StartupType) {
+                    if ($StartupTypeName -eq 'DelayedAutoStart') {
+                        Set-DelayedAutoStartHC @params
+                    }
+                    else {
+                        $setParams = @{
+                            StartupType = $StartupTypeName
+                            ErrorAction = 'Stop'
+                        }
+                        $service | Set-Service @setParams
+                    }
+
+                    $result.Action = "updated StartupType from '$($result.StartupType)' to '$StartupTypeName'"
+
+                    $result.StartupType = $StartupTypeName
+                }
+                #endregion
+            }
+            catch {
+                $result.Error = $_
+                $Error.RemoveAt(0)
+            }
+            finally {
+                $result
             }
         }
         Function Stop-ProcessHC {
             Param (
-                [parameter(Mandatory)]
-                [String]$ComputerName,
                 [parameter(Mandatory)]
                 [alias('Name')]
                 [String]$ProcessName
             )
 
             try {
-                $params = @{
-                    ComputerName = $ComputerName
-                    ArgumentList = $ProcessName
-                    ErrorAction  = 'Stop'
-                }
-                Invoke-Command @params -ScriptBlock {
-                    Param (
-                        [parameter(Mandatory)]
-                        [String]$ProcessName
-                    )
-                    Get-Process -Name $ProcessName |
-                    Stop-Process -EA Stop -Force
-                }
+                Get-Process -Name $ProcessName |
+                Stop-Process -EA Stop -Force
             }
             catch {
-                $M = $_
-                $Error.RemoveAt(0)
+                $M = $_; $Error.RemoveAt(0)
                 throw "Failed to stop process '$ProcessName': $M"
             }
         }
 
+        #region Set service startup type
+        foreach ($serviceName in $SetServiceAutomatic) {
+            $params = @{
+                ServiceName     = $serviceName
+                StartupTypeName = 'Automatic'
+            }
+            Set-ServiceStartupTypeHC @params
+        }
+        foreach ($serviceName in $SetServiceDelayedAutoStart) {
+            $params = @{
+                ServiceName     = $serviceName
+                StartupTypeName = 'DelayedAutoStart'
+            }
+            Set-ServiceStartupTypeHC @params
+        }
+        foreach ($serviceName in $SetServiceDisabled) {
+            $params = @{
+                ServiceName     = $serviceName
+                StartupTypeName = 'Disabled'
+            }
+            Set-ServiceStartupTypeHC @params
+        }
+        foreach ($serviceName in $SetServiceManual) {
+            $params = @{
+                ServiceName     = $serviceName
+                StartupTypeName = 'Manual'
+            }
+            Set-ServiceStartupTypeHC @params
+        }
+        #endregion
+
+        #region Stop service
+        foreach ($serviceName in $ExecuteStopService) {
+            try {
+                $result = [PSCustomObject]@{
+                    Part        = 'StopService'
+                    Date        = Get-Date
+                    ServiceName = $serviceName
+                    DisplayName = $null
+                    StartupType = $null
+                    Status      = $null
+                    Action      = $null
+                    Error       = $null
+                }
+
+                $params = @{
+                    Name        = $serviceName
+                    ErrorAction = 'Stop'
+                }
+                $service = Get-Service @params
+
+                #region Get service state
+                $result.DisplayName = $service.DisplayName
+                $result.Status = $service.Status
+
+                $result.StartupType = if (
+                    ($service.StartType -eq 'Automatic') -and
+                    (Test-DelayedAutoStartHC @params)
+                ) {
+                    'DelayedAutoStart'
+                }
+                else {
+                    $service.StartType
+                }
+                #endregion
+
+                #region Stop service
+                if ($service.Status -ne 'Stopped') {
+                    $service | Stop-Service -ErrorAction 'Stop' -Force
+
+                    $result.Action = 'stopped service'
+                    $result.Status = 'Stopped'
+                }
+                #endregion
+            }
+            catch {
+                $result.Error = $_
+                $Error.RemoveAt(0)
+            }
+            finally {
+                $result
+            }
+        }
+        #endregion
+
+        #region Kill process
+        foreach ($processName in $ExecuteKillProcess) {
+            $params = @{
+                Name        = $processName
+                ErrorAction = 'Ignore'
+            }
+            $processes = Get-Process @params
+
+            foreach ($process in $processes) {
+                try {
+                    $result = [PSCustomObject]@{
+                        Part        = 'KillProcess'
+                        Date        = Get-Date
+                        ProcessName = $processName
+                        Description = $process.Description
+                        Id          = $process.Id
+                        Action      = $null
+                        Error       = $null
+                    }
+
+                    Stop-ProcessHC -ProcessName $processName -EA Stop
+
+                    $result.Action = 'stopped running process'
+                }
+                catch {
+                    $result.Error = $_
+                    $Error.RemoveAt(0)
+                }
+                finally {
+                    $result
+                }
+            }
+        }
+        #endregion
+
+        #region Start service
+        foreach ($serviceName in $ExecuteStartService) {
+            try {
+                $result = [PSCustomObject]@{
+                    Part        = 'StartService'
+                    Date        = Get-Date
+                    ServiceName = $serviceName
+                    DisplayName = $null
+                    StartupType = $null
+                    Status      = $null
+                    Action      = $null
+                    Error       = $null
+                }
+
+                $params = @{
+                    Name        = $serviceName
+                    ErrorAction = 'Stop'
+                }
+                $service = Get-Service @params
+
+                #region Get service state before
+                $result.DisplayName = $service.DisplayName
+                $result.Status = $service.Status
+
+                $result.StartupType = if (
+                    ($service.StartType -eq 'Automatic') -and
+                    (Test-DelayedAutoStartHC @params)
+                ) {
+                    'DelayedAutoStart'
+                }
+                else {
+                    $service.StartType
+                }
+                #endregion
+
+                #region Start service
+                if ($service.Status -ne 'Running') {
+                    $service | Start-Service -ErrorAction 'Stop'
+
+                    $result.Action = 'started service'
+                    $result.Status = 'Running'
+                }
+                #endregion
+            }
+            catch {
+                $result.Error = $_
+                $Error.RemoveAt(0)
+            }
+            finally {
+                $result
+            }
+        }
+        #endregion
+    }
+
+    Try {
         Import-EventLogParamsHC -Source $ScriptName
         Write-EventLog @EventStartParams
         Get-ScriptRuntimeHC -Start
@@ -196,6 +415,16 @@ Begin {
         try {
             if (-not ($mailTo = $file.SendMail.To)) {
                 throw "Property 'SendMail.To' not found."
+            }
+
+            if (-not ($MaxConcurrentJobs = $file.MaxConcurrentJobs)) {
+                throw "Property 'MaxConcurrentJobs' not found"
+            }
+            try {
+                $null = $MaxConcurrentJobs.ToInt16($null)
+            }
+            catch {
+                throw "Property 'MaxConcurrentJobs' needs to be a number, the value '$MaxConcurrentJobs' is not supported."
             }
 
             if (-not ($Tasks = $file.Tasks)) {
@@ -312,6 +541,28 @@ Begin {
             throw "Input file '$ImportFile': $_"
         }
         #endregion
+
+        #region Add properties
+        $TaskNumber = 0
+
+        foreach ($task in $Tasks) {
+            $TaskNumber++
+            $task | Add-Member -NotePropertyMembers @{
+                Jobs       = @()
+                TaskNumber = $TaskNumber
+            }
+
+            foreach ($computerName in $task.ComputerName) {
+                $task.Jobs += @{
+                    ComputerName = $computerName
+                    Session      = $null
+                    Object       = $null
+                    Results      = @()
+                    Errors       = @()
+                }
+            }
+        }
+        #endregion
     }
     Catch {
         Write-Warning $_
@@ -328,275 +579,11 @@ Process {
     }
 
     Try {
-        $i = 0
         Foreach ($task in $Tasks) {
-            $i++
-            foreach ($computerName in $task.ComputerName) {
-                #region Test computer online
-                if (-not (Test-Connection -ComputerName $computerName -Quiet)) {
-                    $M = "Computer '$computerName' is offline"
-                    Write-Verbose $M
-                    Write-EventLog @EventErrorParams -Message $M
-                    Continue
-                }
-                #endregion
+            foreach ($job in $task.Jobs) {
 
-                #region Set service startup type
-                foreach ($startupTypeName in $accepted.serviceStartupTypes) {
-                    foreach (
-                        $serviceName in
-                        $task.SetServiceStartupType.$startupTypeName
-                    ) {
-                        try {
-                            $result = [PSCustomObject]@{
-                                Task         = $i
-                                Part         = 'SetServiceStartupType'
-                                Date         = Get-Date
-                                ComputerName = $computerName
-                                ServiceName  = $serviceName
-                                DisplayName  = $null
-                                StartupType  = $null
-                                Status       = $null
-                                Action       = $null
-                                Error        = $null
-                            }
 
-                            $params = @{
-                                ComputerName = $computerName
-                                Name         = $serviceName
-                                ErrorAction  = 'Stop'
-                            }
-                            $service = Get-Service @params
-
-                            #region Get service state before
-                            $result.DisplayName = $service.DisplayName
-                            $result.Status = $service.Status
-
-                            $result.StartupType = if (
-                                ($service.StartType -eq 'Automatic') -and
-                                (Test-DelayedAutoStartHC @params)
-                            ) {
-                                'DelayedAutoStart'
-                            }
-                            else {
-                                $service.StartType
-                            }
-                            #endregion
-
-                            if ($startupTypeName -ne $result.StartupType) {
-                                if ($startupTypeName -eq 'DelayedAutoStart') {
-                                    Set-DelayedAutoStartHC @params
-                                }
-                                else {
-                                    $setParams = @{
-                                        StartupType = $startupTypeName
-                                        ErrorAction = 'Stop'
-                                    }
-                                    $service | Set-Service @setParams
-                                }
-
-                                $result.Action = "updated StartupType from '$($result.StartupType)' to '$startupTypeName'"
-
-                                $result.StartupType = $startupTypeName
-
-                                $M = "'$computerName' service '$serviceName' action 'SetServiceStartupType': {0}" -f $result.Action
-                                Write-Verbose $M
-                                Write-EventLog @EventOutParams -Message $M
-                            }
-                        }
-                        catch {
-                            $result.Error = $_
-
-                            $M = "'$computerName' service '$serviceName' action 'SetServiceStartupType': $_"
-                            Write-Warning $M
-                            Write-EventLog @EventErrorParams -Message $M
-
-                            $Error.RemoveAt(0)
-                        }
-                        finally {
-                            $export.service += $result
-                        }
-                    }
-                }
-                #endregion
-
-                #region Stop service
-                foreach ($serviceName in $task.Execute.StopService) {
-                    try {
-                        $result = [PSCustomObject]@{
-                            Task         = $i
-                            Part         = 'StopService'
-                            Date         = Get-Date
-                            ComputerName = $computerName
-                            ServiceName  = $serviceName
-                            DisplayName  = $null
-                            StartupType  = $null
-                            Status       = $null
-                            Action       = $null
-                            Error        = $null
-                        }
-
-                        $params = @{
-                            ComputerName = $computerName
-                            Name         = $serviceName
-                            ErrorAction  = 'Stop'
-                        }
-                        $service = Get-Service @params
-
-                        #region Get service state before
-                        $result.DisplayName = $service.DisplayName
-                        $result.Status = $service.Status
-
-                        $result.StartupType = if (
-                            ($service.StartType -eq 'Automatic') -and
-                            (Test-DelayedAutoStartHC @params)
-                        ) {
-                            'DelayedAutoStart'
-                        }
-                        else {
-                            $service.StartType
-                        }
-                        #endregion
-
-                        if ($service.Status -ne 'Stopped') {
-                            $service | Stop-Service -ErrorAction 'Stop' -Force
-
-                            $result.Action = 'stopped service'
-                            $result.Status = 'Stopped'
-
-                            $M = "'$computerName' service '$serviceName' action 'StopService': {0}" -f $result.Action
-                            Write-Verbose $M
-                            Write-EventLog @EventOutParams -Message $M
-                        }
-                    }
-                    catch {
-                        $result.Error = $_
-
-                        $M = "'$computerName' service '$serviceName' action 'StopService': $_"
-                        Write-Warning $M
-                        Write-EventLog @EventErrorParams -Message $M
-
-                        $Error.RemoveAt(0)
-                    }
-                    finally {
-                        $export.service += $result
-                    }
-                }
-                #endregion
-
-                #region Kill process
-                foreach ($processName in $task.Execute.KillProcess) {
-                    $params = @{
-                        ComputerName = $computerName
-                        Name         = $processName
-                        ErrorAction  = 'Ignore'
-                    }
-                    $processes = Get-Process @params
-
-                    if (-not $processes) {
-                        $M = "'$computerName' process '$processName' action 'KillService': process not running"
-                        Write-Verbose $M
-                        Write-EventLog @EventVerboseParams -Message $M
-                        Continue
-                    }
-
-                    foreach ($process in $processes) {
-                        try {
-                            $result = [PSCustomObject]@{
-                                Task         = $i
-                                Part         = 'KillProcess'
-                                Date         = Get-Date
-                                ComputerName = $computerName
-                                ProcessName  = $processName
-                                Description  = $process.Description
-                                Id           = $process.Id
-                                Action       = $null
-                                Error        = $null
-                            }
-
-                            Stop-ProcessHC -ComputerName $computerName -ProcessName $processName -EA Stop
-
-                            $result.Action = 'stopped running process'
-                        }
-                        catch {
-                            $result.Error = $_
-
-                            $M = "'$computerName' process '$processName' action 'KillProcess': $_"
-                            Write-Warning $M
-                            Write-EventLog @EventErrorParams -Message $M
-
-                            $Error.RemoveAt(0)
-                        }
-                        finally {
-                            $export.process += $result
-                        }
-                    }
-                }
-                #endregion
-
-                #region Start service
-                foreach ($serviceName in $task.Execute.StartService) {
-                    try {
-                        $result = [PSCustomObject]@{
-                            Task         = $i
-                            Part         = 'StartService'
-                            Date         = Get-Date
-                            ComputerName = $computerName
-                            ServiceName  = $serviceName
-                            DisplayName  = $null
-                            StartupType  = $null
-                            Status       = $null
-                            Action       = $null
-                            Error        = $null
-                        }
-
-                        $params = @{
-                            ComputerName = $computerName
-                            Name         = $serviceName
-                            ErrorAction  = 'Stop'
-                        }
-                        $service = Get-Service @params
-
-                        #region Get service state before
-                        $result.DisplayName = $service.DisplayName
-                        $result.Status = $service.Status
-
-                        $result.StartupType = if (
-                            ($service.StartType -eq 'Automatic') -and
-                            (Test-DelayedAutoStartHC @params)
-                        ) {
-                            'DelayedAutoStart'
-                        }
-                        else {
-                            $service.StartType
-                        }
-                        #endregion
-
-                        if ($service.Status -ne 'Running') {
-                            $service | Start-Service -ErrorAction 'Stop'
-
-                            $result.Action = 'started service'
-                            $result.Status = 'Running'
-
-                            $M = "'$computerName' service '$serviceName' action 'StartService': {0}" -f $result.Action
-                            Write-Verbose $M
-                            Write-EventLog @EventOutParams -Message $M
-                        }
-                    }
-                    catch {
-                        $result.Error = $_
-
-                        $M = "'$computerName' service '$serviceName' action 'StartService': $_"
-                        Write-Warning $M
-                        Write-EventLog @EventErrorParams -Message $M
-
-                        $Error.RemoveAt(0)
-                    }
-                    finally {
-                        $export.service += $result
-                    }
-                }
-                #endregion
+                & $scriptBlock
             }
         }
     }

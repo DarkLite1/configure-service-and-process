@@ -84,7 +84,8 @@ Describe 'send an e-mail to the admin when' {
     Context 'the ImportFile' {
         BeforeEach {
             $testJsonFile = @{
-                Tasks    = @(
+                MaxConcurrentJobs = 5
+                Tasks             = @(
                     @{
                         ComputerName          = @('PC1')
                         SetServiceStartupType = @{
@@ -100,7 +101,7 @@ Describe 'send an e-mail to the admin when' {
                         }
                     }
                 )
-                SendMail = @{
+                SendMail          = @{
                     To = 'bob@contoso.com'
                 }
             }
@@ -137,7 +138,7 @@ Describe 'send an e-mail to the admin when' {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'Task.SetServiceStartupType.<_>' -ForEach @(
+            It 'Tasks.SetServiceStartupType.<_>' -ForEach @(
                 'Automatic', 'DelayedAutostart', 'Disabled', 'Manual'
             ) {
                 $testJsonFile.Tasks[0].SetServiceStartupType.Remove($_)
@@ -154,7 +155,7 @@ Describe 'send an e-mail to the admin when' {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'Task.Execute.<_>' -ForEach @(
+            It 'Tasks.Execute.<_>' -ForEach @(
                 'StopService', 'KillProcess', 'StartService'
             ) {
                 $testJsonFile.Tasks[0].Execute.Remove($_)
@@ -188,6 +189,34 @@ Describe 'send an e-mail to the admin when' {
             }
         }
         Context 'is missing content for property' {
+            It 'MaxConcurrentJobs' {
+                $testJsonFile.MaxConcurrentJobs = 'a'
+                $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+                .$testScript @testParams
+
+                Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
+                    (&$MailAdminParams) -and
+                    ($Message -like "*Property 'MaxConcurrentJobs' needs to be a number, the value 'a' is not supported*")
+                }
+                Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
+                    $EntryType -eq 'Error'
+                }
+            }
+            It 'MaxConcurrentJobs' {
+                $testJsonFile.MaxConcurrentJobs = $null
+                $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+                .$testScript @testParams
+
+                Should -Invoke Send-MailHC -Exactly 1 -ParameterFilter {
+                    (&$MailAdminParams) -and
+                    ($Message -like "*Property 'MaxConcurrentJobs' not found*")
+                }
+                Should -Invoke Write-EventLog -Exactly 1 -ParameterFilter {
+                    $EntryType -eq 'Error'
+                }
+            }
             It 'Tasks' {
                 $testJsonFile.Tasks = @()
                 $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
@@ -202,7 +231,7 @@ Describe 'send an e-mail to the admin when' {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'Task.ComputerName' {
+            It 'Tasks.ComputerName' {
                 $testJsonFile.Tasks[0].ComputerName = @()
                 $testJsonFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
@@ -217,7 +246,7 @@ Describe 'send an e-mail to the admin when' {
                     $EntryType -eq 'Error'
                 }
             }
-            It 'Task.SetServiceStartupType and Task.Execute' {
+            It 'Tasks.SetServiceStartupType and Tasks.Execute' {
                 $testJsonFile.Tasks[0].ComputerName = @('PC1')
                 $testJsonFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
@@ -288,12 +317,13 @@ Describe 'send an e-mail to the admin when' {
             }
         }
     }
-} -tag test
+} -Tag test
 Describe 'a service startup type in SetServiceStartupType is' {
     Context 'corrected when it is incorrect' {
         BeforeEach {
             $testJsonFile = @{
-                Tasks    = @(
+                MaxConcurrentJobs = 5
+                Tasks             = @(
                     @{
                         ComputerName          = @('PC1')
                         SetServiceStartupType = @{
@@ -309,7 +339,7 @@ Describe 'a service startup type in SetServiceStartupType is' {
                         }
                     }
                 )
-                SendMail = @{
+                SendMail          = @{
                     To = 'bob@contoso.com'
                 }
             }
@@ -388,7 +418,8 @@ Describe 'a service startup type in SetServiceStartupType is' {
     Context 'ignored when it is correct' {
         BeforeEach {
             $testJsonFile = @{
-                Tasks    = @(
+                MaxConcurrentJobs = 5
+                Tasks             = @(
                     @{
                         ComputerName          = @('PC1')
                         SetServiceStartupType = @{
@@ -404,7 +435,7 @@ Describe 'a service startup type in SetServiceStartupType is' {
                         }
                     }
                 )
-                SendMail = @{
+                SendMail          = @{
                     To = 'bob@contoso.com'
                 }
             }
@@ -463,7 +494,8 @@ Describe 'a service startup type in SetServiceStartupType is' {
 Describe 'a service in StopService is' {
     BeforeAll {
         $testJsonFile = @{
-            Tasks    = @(
+            MaxConcurrentJobs = 5
+            Tasks             = @(
                 @{
                     ComputerName          = @('PC1')
                     SetServiceStartupType = @{
@@ -479,7 +511,7 @@ Describe 'a service in StopService is' {
                     }
                 }
             )
-            SendMail = @{
+            SendMail          = @{
                 To = 'bob@contoso.com'
             }
         }
@@ -527,7 +559,8 @@ Describe 'a service in StopService is' {
 Describe 'a process in KillProcess is' {
     BeforeAll {
         $testJsonFile = @{
-            Tasks    = @(
+            MaxConcurrentJobs = 5
+            Tasks             = @(
                 @{
                     ComputerName          = @('PC1')
                     SetServiceStartupType = @{
@@ -543,7 +576,7 @@ Describe 'a process in KillProcess is' {
                     }
                 }
             )
-            SendMail = @{
+            SendMail          = @{
                 To = 'bob@contoso.com'
             }
         }
@@ -581,7 +614,8 @@ Describe 'a process in KillProcess is' {
 Describe 'a service in StartService is' {
     BeforeAll {
         $testJsonFile = @{
-            Tasks    = @(
+            MaxConcurrentJobs = 5
+            Tasks             = @(
                 @{
                     ComputerName          = @('PC1')
                     SetServiceStartupType = @{
@@ -597,7 +631,7 @@ Describe 'a service in StartService is' {
                     }
                 }
             )
-            SendMail = @{
+            SendMail          = @{
                 To = 'bob@contoso.com'
             }
         }
@@ -645,7 +679,8 @@ Describe 'a service in StartService is' {
 Describe 'after the script runs' {
     BeforeAll {
         $testJsonFile = @{
-            Tasks    = @(
+            MaxConcurrentJobs = 5
+            Tasks             = @(
                 @{
                     ComputerName          = @('PC1')
                     SetServiceStartupType = @{
@@ -661,7 +696,7 @@ Describe 'after the script runs' {
                     }
                 }
             )
-            SendMail = @{
+            SendMail          = @{
                 To = 'bob@contoso.com'
             }
         }
