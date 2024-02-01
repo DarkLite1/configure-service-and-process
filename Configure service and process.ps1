@@ -1,13 +1,13 @@
 #Requires -Version 5.1
 #Requires -Modules ImportExcel, Toolbox.HTML, Toolbox.EventLog
 
-<# 
+<#
     .SYNOPSIS
         Stop a service, kill a process and start a service.
 
     .DESCRIPTION
         This script reads a .JSON input file and performs the requested actions.
-        When 'SetServiceStartupType' is used, the service startup type will be 
+        When 'SetServiceStartupType' is used, the service startup type will be
         corrected when needed. Each entry in 'Action' will be performed in the
         order 'StopService', 'KillProcess', 'StartService'.
 
@@ -54,11 +54,11 @@ Begin {
                 [alias('Name')]
                 [String]$ServiceName
             )
-        
+
             try {
                 $params = @{
                     ComputerName = $ComputerName
-                    ArgumentList = $ServiceName 
+                    ArgumentList = $ServiceName
                     ErrorAction  = 'Stop'
                 }
                 Invoke-Command @params -ScriptBlock {
@@ -66,15 +66,15 @@ Begin {
                         [parameter(Mandatory)]
                         [String]$ServiceName
                     )
-            
+
                     $params = @{
-                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" 
+                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
                         ErrorAction = 'Stop'
                     }
                     $property = Get-ItemProperty @params
-            
+
                     if (
-                    ($property.Start -eq 2) -and 
+                    ($property.Start -eq 2) -and
                     ($property.DelayedAutostart -eq 1)
                     ) {
                         $true
@@ -98,11 +98,11 @@ Begin {
                 [alias('Name')]
                 [String]$ServiceName
             )
-    
+
             try {
                 $params = @{
                     ComputerName = $ComputerName
-                    ArgumentList = $ServiceName 
+                    ArgumentList = $ServiceName
                     ErrorAction  = 'Stop'
                 }
                 Invoke-Command @params -ScriptBlock {
@@ -112,7 +112,7 @@ Begin {
                     )
 
                     $params = @{
-                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" 
+                        Path        = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
                         ErrorAction = 'Stop'
                     }
                     Set-ItemProperty @params -Name 'Start' -Value 2
@@ -137,7 +137,7 @@ Begin {
             try {
                 $params = @{
                     ComputerName = $ComputerName
-                    ArgumentList = $ProcessName 
+                    ArgumentList = $ProcessName
                     ErrorAction  = 'Stop'
                 }
                 Invoke-Command @params -ScriptBlock {
@@ -145,9 +145,9 @@ Begin {
                         [parameter(Mandatory)]
                         [String]$ProcessName
                     )
-                    Get-Process -Name $ProcessName | 
+                    Get-Process -Name $ProcessName |
                     Stop-Process -EA Stop -Force
-                }       
+                }
             }
             catch {
                 $M = $_
@@ -191,45 +191,71 @@ Begin {
                 'StopService', 'KillProcess', 'StartService'
             )
         }
-    
-        #region Test and sanitize .json file properties
-        if (-not ($mailTo = $file.SendMail.To)) {
-            throw "Input file '$ImportFile': No 'SendMail.To' addresses found."
-        }
 
-        if (-not ($Tasks = $file.Tasks)) {
-            throw "Input file '$ImportFile': No 'Tasks' found."
-        }
-
-        foreach ($task in $Tasks) {
-            #region Task properties
-            $properties = $task.PSObject.Properties.Name
-            
-            @(
-                'SetServiceStartupType',
-                'ComputerName',
-                'Execute'
-            ) | Where-Object { $properties -notContains $_ } | 
-            ForEach-Object {
-                throw "Property '$_' not found in one of the 'Tasks'."
+        #region Test .json file
+        try {
+            if (-not ($mailTo = $file.SendMail.To)) {
+                throw "Property 'SendMail.To' not found."
             }
-            #endregion
 
+            if (-not ($Tasks = $file.Tasks)) {
+                throw "Property 'Tasks' not found."
+            }
+
+            foreach ($task in $Tasks) {
+                #region Test Tasks properties
+                $properties = $task.PSObject.Properties.Name
+
+                @(
+                    'SetServiceStartupType',
+                    'ComputerName',
+                    'Execute'
+                ) | Where-Object { $properties -notContains $_ } |
+                ForEach-Object {
+                    throw "Property 'Tasks.$_' not found"
+                }
+                #endregion
+
+                #region Test ComputerName
+                if (-not $task.ComputerName) {
+                    throw "Property 'Tasks.ComputerName' not found"
+                }
+
+                if (
+                    $duplicateComputers = $task.ComputerName | Group-Object |
+                    Where-Object { $_.Count -gt 1 }
+                ) {
+                    throw "duplicate ComputerName '$($duplicateComputers.Name)' found in a single task"
+                }
+                #endregion
+
+                #region Test SetServiceStartupType
+                $properties = $task.SetServiceStartupType.PSObject.Properties.Name
+
+                foreach ($startupTypeName in $accepted.serviceStartupTypes) {
+                    if ($properties -notContains $startupTypeName) {
+                        throw "Property 'SetServiceStartupType.$startupTypeName' not found"
+                    }
+                }
+                #endregion
+            }
+        }
+        catch {
+            throw "Input file '$ImportFile': $_"
+        }
+        #endregion
+
+        #region Convert .json file
+        foreach ($task in $Tasks) {
             $actionInTask = $false
 
             #region SetServiceStartupType properties
-            $properties = $task.SetServiceStartupType.PSObject.Properties.Name
-
             $serviceNamesInStartupTypes = @()
-        
-            foreach ($startupTypeName in $accepted.serviceStartupTypes) {
-                if ($properties -notContains $startupTypeName) {
-                    throw "Property 'SetServiceStartupType.$startupTypeName' not found in one of the 'Tasks'."
-                }
 
+            foreach ($startupTypeName in $accepted.serviceStartupTypes) {
                 #region Remove empty values from arrays
-                $task.SetServiceStartupType.$startupTypeName = 
-                $task.SetServiceStartupType.$startupTypeName | 
+                $task.SetServiceStartupType.$startupTypeName =
+                $task.SetServiceStartupType.$startupTypeName |
                 Where-Object { $_ }
                 #endregion
 
@@ -238,7 +264,7 @@ Begin {
                 }
 
                 foreach (
-                    $serviceName in 
+                    $serviceName in
                     $task.SetServiceStartupType.$startupTypeName
                 ) {
                     $serviceNamesInStartupTypes += $serviceName
@@ -246,8 +272,8 @@ Begin {
             }
 
             if (
-                $duplicateServiceNamesInStartupType = $serviceNamesInStartupTypes | Group-Object | 
-                Where-Object { ($_.Name) -and ($_.Count -gt 1) } 
+                $duplicateServiceNamesInStartupType = $serviceNamesInStartupTypes | Group-Object |
+                Where-Object { ($_.Name) -and ($_.Count -gt 1) }
             ) {
                 throw "Service '$($duplicateServiceNamesInStartupType.Name)' can only have one StartupType."
             }
@@ -255,42 +281,31 @@ Begin {
 
             #region Execute properties
             $properties = $task.Execute.PSObject.Properties.Name
-            
+
             foreach ($executionType in $accepted.executionTypes) {
                 if ($properties -notContains $executionType) {
                     throw "Property 'Execute.$executionType' not found in one of the 'Tasks'."
                 }
 
                 #region Remove empty values from arrays
-                $task.Execute.$executionType = $task.Execute.$executionType | 
+                $task.Execute.$executionType = $task.Execute.$executionType |
                 Where-Object { $_ }
                 #endregion
 
                 if ($task.Execute.$executionType) {
                     $actionInTask = $true
-                }   
+                }
             }
             #endregion
 
             #region Test incorrect input
-            if (-not $task.ComputerName) {
-                throw "Input file '$ImportFile': No 'ComputerName' found in one of the 'Tasks'."
-            }
-
             if (-not $actionInTask) {
                 throw "Input file '$ImportFile': Contains a task where properties 'SetServiceStartupType' and 'Execute' are both empty."
             }
 
-            if (
-                $duplicateComputers = $task.ComputerName | Group-Object | 
-                Where-Object { $_.Count -gt 1 } 
-            ) {
-                throw "duplicate ComputerName '$($duplicateComputers.Name)' found in a single task"
-            }
-
             foreach ($disabledService in $task.SetServiceStartupType.Disabled) {
                 if ($task.Execute.StartService -contains $disabledService) {
-                    throw "Service '$disabledService' cannot have StartupType 'Disabled' and 'StartService' at the same time"    
+                    throw "Service '$disabledService' cannot have StartupType 'Disabled' and 'StartService' at the same time"
                 }
             }
             #endregion
@@ -328,7 +343,7 @@ Process {
                 #region Set service startup type
                 foreach ($startupTypeName in $accepted.serviceStartupTypes) {
                     foreach (
-                        $serviceName in 
+                        $serviceName in
                         $task.SetServiceStartupType.$startupTypeName
                     ) {
                         try {
@@ -347,7 +362,7 @@ Process {
 
                             $params = @{
                                 ComputerName = $computerName
-                                Name         = $serviceName 
+                                Name         = $serviceName
                                 ErrorAction  = 'Stop'
                             }
                             $service = Get-Service @params
@@ -373,10 +388,10 @@ Process {
                                 }
                                 else {
                                     $setParams = @{
-                                        StartupType = $startupTypeName 
+                                        StartupType = $startupTypeName
                                         ErrorAction = 'Stop'
                                     }
-                                    $service | Set-Service @setParams    
+                                    $service | Set-Service @setParams
                                 }
 
                                 $result.Action = "updated StartupType from '$($result.StartupType)' to '$startupTypeName'"
@@ -419,18 +434,18 @@ Process {
                             Action       = $null
                             Error        = $null
                         }
-    
+
                         $params = @{
                             ComputerName = $computerName
-                            Name         = $serviceName 
+                            Name         = $serviceName
                             ErrorAction  = 'Stop'
                         }
                         $service = Get-Service @params
-    
+
                         #region Get service state before
                         $result.DisplayName = $service.DisplayName
                         $result.Status = $service.Status
-    
+
                         $result.StartupType = if (
                             ($service.StartType -eq 'Automatic') -and
                             (Test-DelayedAutoStartHC @params)
@@ -441,7 +456,7 @@ Process {
                             $service.StartType
                         }
                         #endregion
-                        
+
                         if ($service.Status -ne 'Stopped') {
                             $service | Stop-Service -ErrorAction 'Stop' -Force
 
@@ -472,7 +487,7 @@ Process {
                 foreach ($processName in $task.Execute.KillProcess) {
                     $params = @{
                         ComputerName = $computerName
-                        Name         = $processName 
+                        Name         = $processName
                         ErrorAction  = 'Ignore'
                     }
                     $processes = Get-Process @params
@@ -499,16 +514,16 @@ Process {
                             }
 
                             Stop-ProcessHC -ComputerName $computerName -ProcessName $processName -EA Stop
-                            
+
                             $result.Action = 'stopped running process'
                         }
                         catch {
                             $result.Error = $_
-    
+
                             $M = "'$computerName' process '$processName' action 'KillProcess': $_"
                             Write-Warning $M
                             Write-EventLog @EventErrorParams -Message $M
-    
+
                             $Error.RemoveAt(0)
                         }
                         finally {
@@ -516,7 +531,7 @@ Process {
                         }
                     }
                 }
-                #endregion 
+                #endregion
 
                 #region Start service
                 foreach ($serviceName in $task.Execute.StartService) {
@@ -533,18 +548,18 @@ Process {
                             Action       = $null
                             Error        = $null
                         }
-    
+
                         $params = @{
                             ComputerName = $computerName
-                            Name         = $serviceName 
+                            Name         = $serviceName
                             ErrorAction  = 'Stop'
                         }
                         $service = Get-Service @params
-    
+
                         #region Get service state before
                         $result.DisplayName = $service.DisplayName
                         $result.Status = $service.Status
-    
+
                         $result.StartupType = if (
                             ($service.StartType -eq 'Automatic') -and
                             (Test-DelayedAutoStartHC @params)
@@ -555,7 +570,7 @@ Process {
                             $service.StartType
                         }
                         #endregion
-                        
+
                         if ($service.Status -ne 'Running') {
                             $service | Start-Service -ErrorAction 'Stop'
 
@@ -580,9 +595,9 @@ Process {
                         $export.service += $result
                     }
                 }
-                #endregion 
+                #endregion
             }
-        }    
+        }
     }
     Catch {
         Write-Warning $_
@@ -614,7 +629,7 @@ End {
         if ($export.service) {
             $excelParams.WorksheetName = $excelParams.TableName = 'Services'
 
-            $export.service | Sort-Object -Property 'Date' | 
+            $export.service | Sort-Object -Property 'Date' |
             Export-Excel @excelParams
 
             $mailParams.Attachments = $excelParams.Path
@@ -623,7 +638,7 @@ End {
         if ($export.process) {
             $excelParams.WorksheetName = $excelParams.TableName = 'Processes'
 
-            $export.process | Sort-Object -Property 'Date' | 
+            $export.process | Sort-Object -Property 'Date' |
             Export-Excel @excelParams
 
             $mailParams.Attachments = $excelParams.Path
@@ -652,7 +667,7 @@ End {
         $(if ($count.process.total -ne 1) { 'es' })
 
         if (
-            $totalErrorCount = $count.systemError + $count.service.error + 
+            $totalErrorCount = $count.systemError + $count.service.error +
             $count.process.error
         ) {
             $mailParams.Priority = 'High'
@@ -663,18 +678,18 @@ End {
         #endregion
 
         $systemErrorHtmlList = if ($count.systemError) {
-            "<p>Detected <b>{0} error{1}:{2}</p>" -f $count.systemError, 
+            "<p>Detected <b>{0} error{1}:{2}</p>" -f $count.systemError,
             $(
                 if ($count.systemError -gt 1) { 's' }
             ),
             $(
-                $Error.Exception.Message | Where-Object { $_ } | 
+                $Error.Exception.Message | Where-Object { $_ } |
                 ConvertTo-HtmlListHC
             )
         }
-     
+
         #region Create HTML table
-        $htmlTable = '<table>{0}{1}</table>' -f 
+        $htmlTable = '<table>{0}{1}</table>' -f
         $(
             if ($count.service.total) {
                 "<tr>
@@ -714,7 +729,7 @@ End {
             }
         )
         #endregion
-     
+
         #region Send mail
         $mailParams.Message = "
             <p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>
@@ -725,7 +740,7 @@ End {
                 '<p><i>* Check the attachment for details</i></p>'
             }
         )
-     
+
         Get-ScriptRuntimeHC -Stop
         Send-MailHC @mailParams
         #endregion
