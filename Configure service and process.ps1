@@ -93,11 +93,6 @@ Begin {
             )
 
             try {
-                Param (
-                    [parameter(Mandatory)]
-                    [String]$ServiceName
-                )
-
                 $params = @{
                     Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
                     ErrorAction = 'Stop'
@@ -167,7 +162,7 @@ Begin {
                         $service | Set-Service @setParams
                     }
 
-                    $result.Action = "updated StartupType from '$($result.StartupType)' to '$StartupTypeName'"
+                    $result.Action = "Updated StartupType from '$($result.StartupType)' to '$StartupTypeName'"
 
                     $result.StartupType = $StartupTypeName
                 }
@@ -266,7 +261,7 @@ Begin {
                 if ($service.Status -ne 'Stopped') {
                     $service | Stop-Service -ErrorAction 'Stop' -Force
 
-                    $result.Action = 'stopped service'
+                    $result.Action = 'Stopped service'
                     $result.Status = 'Stopped'
                 }
                 #endregion
@@ -304,7 +299,7 @@ Begin {
                     Stop-ProcessHC -ProcessName $processName -EA Stop
 
                     $result.Status = 'Stopped'
-                    $result.Action = 'stopped running process'
+                    $result.Action = 'Stopped running process'
                 }
                 catch {
                     $result.Error = $_
@@ -354,7 +349,7 @@ Begin {
                 if ($service.Status -ne 'Running') {
                     $service | Start-Service -ErrorAction 'Stop'
 
-                    $result.Action = 'started service'
+                    $result.Action = 'Started service'
                     $result.Status = 'Running'
                 }
                 #endregion
@@ -599,6 +594,21 @@ Process {
                 ($invokeParams.ArgumentList[5] -join ','),
                 ($invokeParams.ArgumentList[6] -join ',')
                 Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
+
+
+                $params = @{
+                    SetServiceAutomatic        = $invokeParams.ArgumentList[0]
+                    SetServiceDelayedAutoStart =
+                    $invokeParams.ArgumentList[1]
+                    SetServiceDisabled         =
+                    $invokeParams.ArgumentList[2]
+                    SetServiceManual           =
+                    $invokeParams.ArgumentList[3]
+                    ExecuteStopService         = $invokeParams.ArgumentList[4]
+                    ExecuteStopProcess         = $invokeParams.ArgumentList[5]
+                    ExecuteStartService        = $invokeParams.ArgumentList[6]
+                }
+                & $scriptBlock @params
 
                 #region Start job
                 $computerName = $job.ComputerName

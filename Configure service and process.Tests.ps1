@@ -2,6 +2,34 @@
 #Requires -Version 5.1
 
 BeforeAll {
+    $testName = @{
+        Process = 'notepad'
+        Service = 'bits'
+    }
+
+    $testInputFile = @{
+        SendMail          = @{
+            To = 'bob@contoso.com'
+        }
+        MaxConcurrentJobs = 5
+        Tasks             = @(
+            @{
+                ComputerName          = @($env:COMPUTERNAME)
+                SetServiceStartupType = @{
+                    Automatic        = @()
+                    DelayedAutoStart = @()
+                    Disabled         = @()
+                    Manual           = @()
+                }
+                Execute               = @{
+                    StopService  = @()
+                    StopProcess  = @()
+                    StartService = @()
+                }
+            }
+        )
+    }
+
     $testOutParams = @{
         FilePath = (New-Item "TestDrive:/Test.json" -ItemType File).FullName
         Encoding = 'utf8'
@@ -18,43 +46,34 @@ BeforeAll {
     Function Test-DelayedAutoStartHC {
         Param (
             [parameter(Mandatory)]
-            [String]$ComputerName,
-            [parameter(Mandatory)]
             [alias('Name')]
             [String]$ServiceName
         )
-    }
-    Function Set-DelayedAutoStartHC {
-        Param (
-            [parameter(Mandatory)]
-            [String]$ComputerName,
-            [parameter(Mandatory)]
-            [alias('Name')]
-            [String]$ServiceName
-        )
-    }
-    Function Stop-ProcessHC {
-        Param (
-            [parameter(Mandatory)]
-            [String]$ComputerName,
-            [parameter(Mandatory)]
-            [alias('Name')]
-            [String]$ProcessName
-        )
-    }
-    Mock Set-DelayedAutoStartHC
-    Mock Test-DelayedAutoStartHC { $true }
 
-    Mock Get-Service
-    Mock Get-Process
-    Mock Invoke-Command
+        try {
+            $params = @{
+                Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
+                ErrorAction = 'Stop'
+            }
+            $property = Get-ItemProperty @params
+
+            if (
+                ($property.Start -eq 2) -and
+                ($property.DelayedAutostart -eq 1)
+            ) {
+                $true
+            }
+            else {
+                $false
+            }
+        }
+        catch {
+            $M = $_; $Error.RemoveAt(0)
+            throw "Failed testing if 'DelayedAutostart' is set: $M"
+        }
+    }
+
     Mock Send-MailHC
-    Mock Set-Service
-    Mock Start-Process
-    Mock Start-Service
-    Mock Stop-ProcessHC
-    Mock Stop-Service
-    Mock Test-Connection { $true }
     Mock Write-EventLog
 }
 Describe 'the mandatory parameters are' {
@@ -317,7 +336,32 @@ Describe 'send an e-mail to the admin when' {
             }
         }
     }
-} -Tag test
+}
+Context 'SetServiceStartupType' {
+    BeforeAll {
+        Get-Service -Name $testName.Service |
+        Set-Service -StartupType 'Disabled'
+    }
+    It '<_>' -ForEach @('Automatic', 'Manual', 'Disabled') {
+        $testNewInputFile = Copy-ObjectHC $testInputFile
+        $testNewInputFile.Tasks[0].SetServiceStartupType.$_ = $testName.Service
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+        .$testScript @testParams
+
+        (Get-Service -Name $testName.Service).StartType | Should -Be $_
+    }
+    It 'DelayedAutoStart' {
+        $testNewInputFile = Copy-ObjectHC $testInputFile
+        $testNewInputFile.Tasks[0].SetServiceStartupType.DelayedAutoStart = $testName.Service
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+        .$testScript @testParams
+
+        (Get-Service -Name $testName.Service).StartType | Should -Be 'Automatic'
+        Test-DelayedAutoStartHC -ServiceName $testName.Service | Should -BeTrue
+    }  -Tag test
+}
 Describe 'a service startup type in SetServiceStartupType is' {
     Context 'corrected when it is incorrect' {
         BeforeEach {
@@ -493,29 +537,9 @@ Describe 'a service startup type in SetServiceStartupType is' {
 }
 Describe 'a service in StopService is' {
     BeforeAll {
-        $testJsonFile = @{
-            MaxConcurrentJobs = 5
-            Tasks             = @(
-                @{
-                    ComputerName          = @('PC1')
-                    SetServiceStartupType = @{
-                        Automatic        = @()
-                        DelayedAutostart = @()
-                        Disabled         = @()
-                        Manual           = @()
-                    }
-                    Execute               = @{
-                        StopService  = @('testService')
-                        StopProcess  = @()
-                        StartService = @()
-                    }
-                }
-            )
-            SendMail          = @{
-                To = 'bob@contoso.com'
-            }
-        }
-        $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+        $testNewInputFile = Copy-ObjectHC $testInputFile
+        # $testNewInputFile =
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
     }
     It 'stopped when it is running' {
         $testService = New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties @{
