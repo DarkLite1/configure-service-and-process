@@ -594,10 +594,13 @@ Process {
             foreach ($job in $task.Jobs) {
                 $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.KillProcess '{6}' Execute.StartService '{7}'" -f
                 $job.ComputerName,
-                $invokeParams.ArgumentList[0], $invokeParams.ArgumentList[1],
-                $invokeParams.ArgumentList[2], $invokeParams.ArgumentList[3],
-                $invokeParams.ArgumentList[4], $invokeParams.ArgumentList[5],
-                $invokeParams.ArgumentList[6]
+                ($invokeParams.ArgumentList[0] -join ','),
+                ($invokeParams.ArgumentList[1] -join ','),
+                ($invokeParams.ArgumentList[2] -join ','),
+                ($invokeParams.ArgumentList[3] -join ','),
+                ($invokeParams.ArgumentList[4] -join ','),
+                ($invokeParams.ArgumentList[5] -join ','),
+                ($invokeParams.ArgumentList[6] -join ',')
                 Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
                 #region Start job
@@ -633,6 +636,51 @@ Process {
                 #endregion
             }
         }
+
+        #region Wait for all jobs to finish
+        $waitJobParams = @{
+            Job = $Tasks.Jobs.Object | Where-Object { $_ }
+        }
+        if ($waitJobParams.Job) {
+            Write-Verbose 'Wait for all jobs to finish'
+
+            $null = Wait-Job @waitJobParams
+        }
+        #endregion
+
+        #region Get job results and job errors
+        foreach ($task in $Tasks) {
+            foreach (
+                $job in
+                $task.Jobs | Where-Object { $_.Object }
+            ) {
+                $jobErrors = @()
+                $receiveParams = @{
+                    ErrorVariable = 'jobErrors'
+                    ErrorAction   = 'SilentlyContinue'
+                }
+                $job.Results += $job.Object | Receive-Job @receiveParams
+
+                foreach ($e in $jobErrors) {
+                    $job.Errors += $e.ToString()
+                    $Error.Remove($e)
+
+                    $M = "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.KillProcess '{6}' Execute.StartService '{7}': {8}" -f
+                    $job.ComputerName,
+                    ($invokeParams.ArgumentList[0] -join ','),
+                    ($invokeParams.ArgumentList[1] -join ','),
+                    ($invokeParams.ArgumentList[2] -join ','),
+                    ($invokeParams.ArgumentList[3] -join ','),
+                    ($invokeParams.ArgumentList[4] -join ','),
+                    ($invokeParams.ArgumentList[5] -join ','),
+                    ($invokeParams.ArgumentList[6] -join ','), $e.ToString()
+                    Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
+                }
+
+                $job.Session | Remove-PSSession -ErrorAction Ignore
+            }
+        }
+        #endregion
     }
     Catch {
         Write-Warning $_
