@@ -122,7 +122,6 @@ Begin {
                     Request     = "SetServiceStartupType to $StartupTypeName"
                     Date        = Get-Date
                     Name        = $ServiceName
-                    Type        = 'Service'
                     StartupType = $null
                     Status      = $null
                     Action      = $null
@@ -564,11 +563,6 @@ Begin {
 }
 
 Process {
-    $export = @{
-        service = @()
-        process = @()
-    }
-
     Try {
         #region Start job to manipulate services and processes
         Foreach ($task in $Tasks) {
@@ -703,13 +697,6 @@ Process {
 
 End {
     Try {
-        $excelParams = @{
-            Path         = "$logFile - Report.xlsx"
-            AutoSize     = $true
-            FreezeTopRow = $true
-            Verbose      = $false
-        }
-
         $mailParams = @{
             To        = $mailTo
             Bcc       = $ScriptAdmin
@@ -719,50 +706,67 @@ End {
             Save      = "$logFile - Mail.html"
         }
 
-        #region Export results to Excel file
-        if ($export.service) {
-            $excelParams.WorksheetName = $excelParams.TableName = 'Services'
-
-            $export.service | Sort-Object -Property 'Date' |
-            Export-Excel @excelParams
-
-            $mailParams.Attachments = $excelParams.Path
+        #region Export job results to Excel file
+        $exportToExcel = foreach ($task in $Tasks) {
+            foreach (
+                $job in
+                $tasks.jobs | Where-Object { $_.Results }
+            ) {
+                $job.Results | Select-Object -Property @{
+                    Name       = 'TaskNr'
+                    Expression = { $task.TaskNumber }
+                },
+                @{
+                    Name       = 'ComputerName'
+                    Expression = { $job.ComputerName }
+                },
+                @{
+                    Name       = 'DateTime'
+                    Expression = { $_.Date }
+                },
+                Request, Name, StartupType, Status, Action, Error
+            }
         }
 
-        if ($export.process) {
-            $excelParams.WorksheetName = $excelParams.TableName = 'Processes'
+        if ($exportToExcel) {
+            $M = "Export $($exportToExcel.Count) rows to Excel"
+            Write-Verbose $M; Write-EventLog @EventOutParams -Message $M
 
-            $export.process | Sort-Object -Property 'Date' |
-            Export-Excel @excelParams
+            $excelParams = @{
+                Path               = "$logFile - Log.xlsx"
+                WorksheetName      = 'Overview'
+                TableName          = 'Overview'
+                NoNumberConversion = '*'
+                AutoSize           = $true
+                FreezeTopRow       = $true
+            }
+            $exportToExcel | Export-Excel @excelParams
 
             $mailParams.Attachments = $excelParams.Path
         }
         #endregion
 
-        $count = @{
-            service     = @{
-                total  = $export.service.Count
-                action = $export.service | Where-Object { $_.Action } | Measure-Object | Select-Object -ExpandProperty 'Count'
-                error  = $export.service | Where-Object { $_.Error } | Measure-Object | Select-Object -ExpandProperty 'Count'
+        $counter = @{
+            rowsExportedToExcel = $exportToExcel.Count
+            errors              = @{
+                jobResults = (
+                    $Tasks.jobs.Results |
+                    Where-Object { $_.Error } | Measure-Object).Count
+                jobGeneric = (
+                    $Tasks.jobs |
+                    Where-Object { $_.Errors } | Measure-Object).Count
+                system     = ($Error.Exception.Message | Measure-Object).Count
             }
-            process     = @{
-                total  = $export.process.Count
-                action = $export.process | Where-Object { $_.Action } | Measure-Object | Select-Object -ExpandProperty 'Count'
-                error  = $export.process | Where-Object { $_.Error } | Measure-Object | Select-Object -ExpandProperty 'Count'
-            }
-            systemError = ($Error.Exception.Message | Measure-Object).Count
         }
 
         #region Subject and Priority
-        $mailParams.Subject = '{0} service{1}, {2} process{3}' -f
-        $count.service.total,
-        $(if ($count.service.total -ne 1) { 's' }),
-        $count.process.total,
-        $(if ($count.process.total -ne 1) { 'es' })
+        $mailParams.Subject = '{0} action{1}' -f
+        $counter.rowsExportedToExcel,
+        $(if ($counter.rowsExportedToExcel -ne 1) { 's' })
 
         if (
-            $totalErrorCount = $count.systemError + $count.service.error +
-            $count.process.error
+            $totalErrorCount = $counter.errors.system +
+            $counter.errors.jobGeneric + $counter.errors.jobResults
         ) {
             $mailParams.Priority = 'High'
             $mailParams.Subject += ", $totalErrorCount error{0}" -f $(
@@ -771,63 +775,116 @@ End {
         }
         #endregion
 
-        $systemErrorHtmlList = if ($count.systemError) {
-            "<p>Detected <b>{0} error{1}:{2}</p>" -f $count.systemError,
+        #region Create system errors HTML list
+        $systemErrorsHtmlList = if ($counter.errors.system) {
+            "<p>Detected <b>{0} error{1}:{2}</p>" -f $counter.errors.system,
             $(
-                if ($count.systemError -gt 1) { 's' }
+                if ($counter.errors.system -gt 1) { 's' }
             ),
             $(
                 $Error.Exception.Message | Where-Object { $_ } |
                 ConvertTo-HtmlListHC
             )
         }
+        #endregion
+
+        #region Create generic job errors HTML list
+        $jobErrorsHtmlList = if ($counter.jobGeneric) {
+            $errorList = foreach ($task in $Tasks) {
+                foreach (
+                    $job in
+                    $task.Jobs | Where-Object { $_.Errors }
+                ) {
+                    foreach ($e in $job.Errors) {
+                        "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
+                        $job.ComputerName,
+                        ($task.SetServiceStartupType.Automatic -join ','),
+                        ($task.SetServiceStartupType.DelayedAutoStart -join ','),
+                        ($task.SetServiceStartupType.Disabled -join ','),
+                        ($task.SetServiceStartupType.Manual -join ','),
+                        ($task.Execute.StopService -join ','),
+                        ($task.Execute.StopProcess -join ','),
+                        ($task.Execute.StartService -join ','), $e
+                    }
+                }
+            }
+
+            $errorList |
+            ConvertTo-HtmlListHC -Spacing Wide -Header 'Job errors:'
+        }
+        #endregion
 
         #region Create HTML table
-        $htmlTable = '<table>{0}{1}</table>' -f
-        $(
-            if ($count.service.total) {
-                "<tr>
-                    <th colspan=`"2`">Services</th>
-                </tr>
+        $htmlTable = foreach ($task in $Tasks) {
+            "<table>
                 <tr>
-                    <td>Rows</td>
-                    <td>$($count.service.total)</td>
+                    <th colspan=`"2`">$($task.ComputerName -join ', ')</th>
                 </tr>
-                <tr>
-                    <td>Actions</td>
-                    <td>$($count.service.action)</td>
-                </tr>
-                <tr>
-                    <td>Errors</td>
-                    <td>$($count.service.error)</td>
-                </tr>"
-            }
-        ),
-        $(
-            if ($count.process.total) {
-                "<tr>
-                        <th colspan=`"2`">Processes</th>
-                    </tr>
-                    <tr>
-                        <td>Rows</td>
-                        <td>$($count.process.total)</td>
-                    </tr>
-                    <tr>
-                        <td>Actions</td>
-                        <td>$($count.process.action)</td>
-                    </tr>
-                    <tr>
-                        <td>Errors</td>
-                        <td>$($count.process.error)</td>
-                    </tr>"
-            }
-        )
+                $(
+                    if ($task.SetServiceStartupType.Automatic) {
+                        "<tr>
+                            <td>Startup type 'Automatic'</td>
+                            <td>$($task.SetServiceStartupType.Automatic -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.SetServiceStartupType.DelayedAutoStart) {
+                        "<tr>
+                            <td>Startup type 'DelayedAutoStart'</td>
+                            <td>$($task.SetServiceStartupType.DelayedAutoStart -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.SetServiceStartupType.Disabled) {
+                        "<tr>
+                            <td>Startup type 'Disabled'</td>
+                            <td>$($task.SetServiceStartupType.Disabled -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.SetServiceStartupType.Manual) {
+                        "<tr>
+                            <td>Startup type 'Manual'</td>
+                            <td>$($task.SetServiceStartupType.Manual -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.Execute.StopService) {
+                        "<tr>
+                            <td>Stop service</td>
+                            <td>$($task.Execute.StopService -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.Execute.StopProcess) {
+                        "<tr>
+                            <td>Stop process</td>
+                            <td>$($task.Execute.StopProcess -join ', ')</td>
+                        </tr>"
+                    }
+                )
+                $(
+                    if ($task.Execute.StartService) {
+                        "<tr>
+                            <td>Start service</td>
+                            <td>$($task.Execute.StartService -join ', ')</td>
+                        </tr>"
+                    }
+                )
+            </table>"
+        }
         #endregion
 
         #region Send mail
         $mailParams.Message = "
             <p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>
-            $systemErrorHtmlList
+            $systemErrorsHtmlList
+            $jobErrorsHtmlList
             $htmlTable
             {0}" -f $(
             if ($mailParams.Attachments) {

@@ -403,102 +403,20 @@ Context 'Execute' {
         Get-Process -Name $testName.Process -EA Ignore | Should -BeNullOrEmpty
     }
 }
-Describe 'after the script runs' {
+Describe 'when the script runs successfully' {
     BeforeAll {
-        $testJsonFile = @{
-            MaxConcurrentJobs = 5
-            Tasks             = @(
-                @{
-                    ComputerName          = @('PC1')
-                    SetServiceStartupType = @{
-                        Automatic        = @()
-                        DelayedAutostart = @()
-                        Disabled         = @('testServiceManual')
-                        Manual           = @()
-                    }
-                    Execute               = @{
-                        StopService  = @('testServiceStopped')
-                        StopProcess  = @('testProcessKilled')
-                        StartService = @('testServiceStarted')
-                    }
-                }
-            )
-            SendMail          = @{
-                To = 'bob@contoso.com'
-            }
-        }
-        $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+        Get-Service -Name $testName.Service |
+        Set-Service -StartupType 'Automatic'
+        Start-Service -Name $testName.Service
+        Start-Process -FilePath $testName.Process
 
-        $testData = @{
-            Services  = @(
-                @{
-                    # SetServiceStartupType
-                    ServiceName = $testJsonFile.Tasks[0].SetServiceStartupType.Disabled[0]
-                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
-                    Status      = 'Stopped'
-                    StartType   = 'Manual'
-                    DisplayName = 'display name 1'
-                }
-                @{
-                    # StopService
-                    ServiceName = $testJsonFile.Tasks[0].Execute.StopService[0]
-                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
-                    Status      = 'Running'
-                    StartType   = 'Automatic'
-                    DisplayName = 'display name 2'
-                }
-                @{
-                    # StartService
-                    ServiceName = $testJsonFile.Tasks[0].Execute.StartService[0]
-                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
-                    Status      = 'Stopped'
-                    StartType   = 'Automatic'
-                    DisplayName = 'display name 3'
-                }
-            )
-            Processes = @(
-                @{
-                    # StopProcess
-                    ProcessName = $testJsonFile.Tasks[0].Execute.StopProcess[0]
-                    MachineName = $testJsonFile.Tasks[0].ComputerName[0]
-                    Id          = 124
-                }
-            )
-        }
+        $testNewInputFile = Copy-ObjectHC $testInputFile
 
-        #region SetServiceStartupType
-        Mock Get-Service {
-            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[0]
-        } -ParameterFilter {
-            $Name -eq $testData.Services[0].ServiceName
-        }
-        #endregion
+        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process
+        $testNewInputFile.Tasks[0].Execute.StopService = $testName.Service
+        $testNewInputFile.Tasks[0].SetServiceStartupType.DelayedAutoStart = $testName.Service
 
-        #region StopService
-        Mock Get-Service {
-            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[1]
-        } -ParameterFilter {
-            $Name -eq $testData.Services[1].ServiceName
-        }
-        #endregion
-
-        #region StartService
-        Mock Get-Service {
-            New-MockObject -Type 'System.ServiceProcess.ServiceController' -Properties $testData.Services[2]
-        } -ParameterFilter {
-            $Name -eq $testData.Services[2].ServiceName
-        }
-        #endregion
-
-        #region StopProcess
-        Mock Get-Process {
-            New-MockObject -Type 'System.Diagnostics.Process' -Properties $testData.Processes[0]
-        } -ParameterFilter {
-            $Name -eq $testData.Processes[0].ProcessName
-        }
-        #endregion
-
-        Mock Test-DelayedAutoStartHC { $true }
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
         .$testScript @testParams
 
@@ -509,11 +427,10 @@ Describe 'after the script runs' {
             BeforeAll {
                 $testExportedExcelRows = @(
                     @{
-                        # SetServiceStartupType
                         Task         = 1
-                        Part         = 'SetServiceStartupType'
-                        ComputerName = $testData.Services[0].MachineName
-                        ServiceName  = $testData.Services[0].ServiceName
+                        Request      = 'SetServiceStartupType'
+                        ComputerName = $env:COMPUTERNAME
+                        Name  = $testData.Services[0].Name
                         DisplayName  = $testData.Services[0].DisplayName
                         Status       = $testData.Services[0].Status
                         StartupType  = 'Disabled'
@@ -521,11 +438,10 @@ Describe 'after the script runs' {
                         Error        = $null
                     }
                     @{
-                        # StopService
                         Task         = 1
-                        Part         = 'StopService'
-                        ComputerName = $testData.Services[1].MachineName
-                        ServiceName  = $testData.Services[1].ServiceName
+                        Request      = 'StopService'
+                        ComputerName = $env:COMPUTERNAME
+                        Name  = $testData.Services[1].Name
                         DisplayName  = $testData.Services[1].DisplayName
                         Status       = 'Stopped'
                         StartupType  = 'DelayedAutoStart'
@@ -533,11 +449,10 @@ Describe 'after the script runs' {
                         Error        = $null
                     }
                     @{
-                        # StartService
                         Task         = 1
-                        Part         = 'StartService'
-                        ComputerName = $testData.Services[2].MachineName
-                        ServiceName  = $testData.Services[2].ServiceName
+                        Request      = 'StartService'
+                        ComputerName = $env:COMPUTERNAME
+                        Name  = $testData.Services[2].Name
                         DisplayName  = $testData.Services[2].DisplayName
                         Status       = 'Running'
                         StartupType  = 'DelayedAutoStart'
@@ -557,13 +472,13 @@ Describe 'after the script runs' {
             It 'with the correct data in the rows' {
                 foreach ($testRow in $testExportedExcelRows) {
                     $actualRow = $actual | Where-Object {
-                        $_.ServiceName -eq $testRow.ServiceName
+                        $_.Name -eq $testRow.Name
                     }
                     $actualRow.Task | Should -Be $testRow.Task
-                    $actualRow.Part | Should -Be $testRow.Part
+                    $actualRow.Request | Should -Be $testRow.Request
                     $actualRow.ComputerName | Should -Be $testRow.ComputerName
                     $actualRow.DisplayName | Should -Be $testRow.DisplayName
-                    $actualRow.ServiceName | Should -Be $testRow.ServiceName
+                    $actualRow.Name | Should -Be $testRow.Name
                     $actualRow.Status | Should -Be $testRow.Status
                     $actualRow.StartupType | Should -Be $testRow.StartupType
                     $actualRow.Action | Should -Be $testRow.Action
@@ -578,7 +493,7 @@ Describe 'after the script runs' {
                 $testExportedExcelRows = @(
                     @{
                         Task         = $i
-                        Part         = 'StopProcess'
+                        Request      = 'StopProcess'
                         ComputerName = $testData.Processes[0].MachineName
                         ProcessName  = $testData.Processes[0].ProcessName
                         Id           = $testData.Processes[0].Id
@@ -601,7 +516,7 @@ Describe 'after the script runs' {
                         $_.ProcessName -eq $testRow.ProcessName
                     }
                     $actualRow.Task | Should -Be $testRow.Task
-                    $actualRow.Part | Should -Be $testRow.Part
+                    $actualRow.Request | Should -Be $testRow.Request
                     $actualRow.ComputerName | Should -Be $testRow.ComputerName
                     $actualRow.ProcessName | Should -Be $testRow.ProcessName
                     $actualRow.Id | Should -Be $testRow.Id
