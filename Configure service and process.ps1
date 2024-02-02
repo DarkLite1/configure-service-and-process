@@ -543,13 +543,13 @@ Begin {
         #endregion
 
         #region Add properties
-        $TaskNumber = 0
+        $taskNumber = 0
 
         foreach ($task in $Tasks) {
-            $TaskNumber++
+            $taskNumber++
             $task | Add-Member -NotePropertyMembers @{
                 Jobs       = @()
-                TaskNumber = $TaskNumber
+                TaskNumber = $taskNumber
             }
 
             foreach ($computerName in $task.ComputerName) {
@@ -674,7 +674,8 @@ Process {
                     ($invokeParams.ArgumentList[4] -join ','),
                     ($invokeParams.ArgumentList[5] -join ','),
                     ($invokeParams.ArgumentList[6] -join ','), $e.ToString()
-                    Write-Verbose $M; Write-EventLog @EventErrorParams -Message $M
+                    Write-Verbose $M
+                    Write-EventLog @EventErrorParams -Message $M
                 }
 
                 $job.Session | Remove-PSSession -ErrorAction Ignore
