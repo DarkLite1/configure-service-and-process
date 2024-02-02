@@ -9,7 +9,7 @@
         This script reads a .JSON input file and performs the requested actions.
         When 'SetServiceStartupType' is used, the service startup type will be
         corrected when needed. Each entry in 'Action' will be performed in the
-        order 'StopService', 'KillProcess', 'StartService'.
+        order 'StopService', 'StopProcess', 'StartService'.
 
     .PARAMETER ImportFile
         A .JSON file containing the script arguments. See the Example.json file
@@ -52,7 +52,7 @@ Begin {
             [String[]]$SetServiceDisabled,
             [String[]]$SetServiceManual,
             [String[]]$ExecuteStopService,
-            [String[]]$ExecuteKillProcess,
+            [String[]]$ExecuteStopProcess,
             [String[]]$ExecuteStartService
         )
 
@@ -124,10 +124,10 @@ Begin {
             )
             try {
                 $result = [PSCustomObject]@{
-                    Part        = 'SetServiceStartupType'
+                    Request     = "SetServiceStartupType to $StartupTypeName"
                     Date        = Get-Date
-                    ServiceName = $ServiceName
-                    DisplayName = $null
+                    Name        = $ServiceName
+                    Type        = 'Service'
                     StartupType = $null
                     Status      = $null
                     Action      = $null
@@ -141,7 +141,6 @@ Begin {
                 }
                 $service = Get-Service @params
 
-                $result.DisplayName = $service.DisplayName
                 $result.Status = $service.Status
 
                 $result.StartupType = if (
@@ -234,10 +233,9 @@ Begin {
         foreach ($serviceName in $ExecuteStopService) {
             try {
                 $result = [PSCustomObject]@{
-                    Part        = 'StopService'
                     Date        = Get-Date
-                    ServiceName = $serviceName
-                    DisplayName = $null
+                    Request     = 'StopService'
+                    Name        = $serviceName
                     StartupType = $null
                     Status      = $null
                     Action      = $null
@@ -251,7 +249,6 @@ Begin {
                 $service = Get-Service @params
 
                 #region Get service state
-                $result.DisplayName = $service.DisplayName
                 $result.Status = $service.Status
 
                 $result.StartupType = if (
@@ -285,7 +282,7 @@ Begin {
         #endregion
 
         #region Kill process
-        foreach ($processName in $ExecuteKillProcess) {
+        foreach ($processName in $ExecuteStopProcess) {
             $params = @{
                 Name        = $processName
                 ErrorAction = 'Ignore'
@@ -295,17 +292,18 @@ Begin {
             foreach ($process in $processes) {
                 try {
                     $result = [PSCustomObject]@{
-                        Part        = 'KillProcess'
                         Date        = Get-Date
-                        ProcessName = $processName
-                        Description = $process.Description
-                        Id          = $process.Id
+                        Request     = 'StopProcess'
+                        Name        = '{0} (ID {1})' -f $processName, $process.Id
+                        StartupType = $null
+                        Status      = 'Running'
                         Action      = $null
                         Error       = $null
                     }
 
                     Stop-ProcessHC -ProcessName $processName -EA Stop
 
+                    $result.Status = 'Stopped'
                     $result.Action = 'stopped running process'
                 }
                 catch {
@@ -323,10 +321,9 @@ Begin {
         foreach ($serviceName in $ExecuteStartService) {
             try {
                 $result = [PSCustomObject]@{
-                    Part        = 'StartService'
                     Date        = Get-Date
-                    ServiceName = $serviceName
-                    DisplayName = $null
+                    Request     = 'StartService'
+                    Name        = $serviceName
                     StartupType = $null
                     Status      = $null
                     Action      = $null
@@ -340,7 +337,6 @@ Begin {
                 $service = Get-Service @params
 
                 #region Get service state before
-                $result.DisplayName = $service.DisplayName
                 $result.Status = $service.Status
 
                 $result.StartupType = if (
@@ -407,7 +403,7 @@ Begin {
                 'Automatic', 'DelayedAutoStart', 'Disabled', 'Manual'
             )
             executionTypes      = @(
-                'StopService', 'KillProcess', 'StartService'
+                'StopService', 'StopProcess', 'StartService'
             )
         }
 
@@ -579,6 +575,7 @@ Process {
     }
 
     Try {
+        #region Start job to manipulate services and processes
         Foreach ($task in $Tasks) {
             $invokeParams = @{
                 ScriptBlock  = $scriptBlock
@@ -587,12 +584,12 @@ Process {
                 $task.SetServiceStartupType.Disabled,
                 $task.SetServiceStartupType.Manual,
                 $task.Execute.StopService,
-                $task.Execute.KillProcess,
+                $task.Execute.StopProcess,
                 $task.Execute.StartService
             }
 
             foreach ($job in $task.Jobs) {
-                $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.KillProcess '{6}' Execute.StartService '{7}'" -f
+                $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}'" -f
                 $job.ComputerName,
                 ($invokeParams.ArgumentList[0] -join ','),
                 ($invokeParams.ArgumentList[1] -join ','),
@@ -636,6 +633,7 @@ Process {
                 #endregion
             }
         }
+        #endregion
 
         #region Wait for all jobs to finish
         $waitJobParams = @{
@@ -665,7 +663,7 @@ Process {
                     $job.Errors += $e.ToString()
                     $Error.Remove($e)
 
-                    $M = "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.KillProcess '{6}' Execute.StartService '{7}': {8}" -f
+                    $M = "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
                     $job.ComputerName,
                     ($invokeParams.ArgumentList[0] -join ','),
                     ($invokeParams.ArgumentList[1] -join ','),

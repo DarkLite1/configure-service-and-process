@@ -96,7 +96,7 @@ Describe 'send an e-mail to the admin when' {
                         }
                         Execute               = @{
                             StopService  = @()
-                            KillProcess  = @()
+                            StopProcess  = @()
                             StartService = @()
                         }
                     }
@@ -156,7 +156,7 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'Tasks.Execute.<_>' -ForEach @(
-                'StopService', 'KillProcess', 'StartService'
+                'StopService', 'StopProcess', 'StartService'
             ) {
                 $testJsonFile.Tasks[0].Execute.Remove($_)
                 $testJsonFile | ConvertTo-Json -Depth 5 |
@@ -264,7 +264,7 @@ Describe 'send an e-mail to the admin when' {
         }
         Context 'contains incorrect content' {
             BeforeEach {
-                $testJsonFile.Tasks[0].Execute.KillProcess = @('chrome')
+                $testJsonFile.Tasks[0].Execute.StopProcess = @('chrome')
             }
             It 'duplicate ComputerName' {
                 $testJsonFile.Tasks[0].ComputerName = @('PC1', 'PC1', 'PC2')
@@ -334,7 +334,7 @@ Describe 'a service startup type in SetServiceStartupType is' {
                         }
                         Execute               = @{
                             StopService  = @()
-                            KillProcess  = @()
+                            StopProcess  = @()
                             StartService = @()
                         }
                     }
@@ -430,7 +430,7 @@ Describe 'a service startup type in SetServiceStartupType is' {
                         }
                         Execute               = @{
                             StopService  = @()
-                            KillProcess  = @()
+                            StopProcess  = @()
                             StartService = @()
                         }
                     }
@@ -506,7 +506,7 @@ Describe 'a service in StopService is' {
                     }
                     Execute               = @{
                         StopService  = @('testService')
-                        KillProcess  = @()
+                        StopProcess  = @()
                         StartService = @()
                     }
                 }
@@ -556,7 +556,7 @@ Describe 'a service in StopService is' {
         Should -Not -Invoke Stop-Service
     }
 }
-Describe 'a process in KillProcess is' {
+Describe 'a process in StopProcess is' {
     BeforeAll {
         $testJsonFile = @{
             MaxConcurrentJobs = 5
@@ -571,7 +571,7 @@ Describe 'a process in KillProcess is' {
                     }
                     Execute               = @{
                         StopService  = @()
-                        KillProcess  = @('testProcess')
+                        StopProcess  = @('testProcess')
                         StartService = @()
                     }
                 }
@@ -626,7 +626,7 @@ Describe 'a service in StartService is' {
                     }
                     Execute               = @{
                         StopService  = @()
-                        KillProcess  = @()
+                        StopProcess  = @()
                         StartService = @('testService')
                     }
                 }
@@ -691,7 +691,7 @@ Describe 'after the script runs' {
                     }
                     Execute               = @{
                         StopService  = @('testServiceStopped')
-                        KillProcess  = @('testProcessKilled')
+                        StopProcess  = @('testProcessKilled')
                         StartService = @('testServiceStarted')
                     }
                 }
@@ -731,8 +731,8 @@ Describe 'after the script runs' {
             )
             Processes = @(
                 @{
-                    # KillProcess
-                    ProcessName = $testJsonFile.Tasks[0].Execute.KillProcess[0]
+                    # StopProcess
+                    ProcessName = $testJsonFile.Tasks[0].Execute.StopProcess[0]
                     MachineName = $testJsonFile.Tasks[0].ComputerName[0]
                     Id          = 124
                 }
@@ -763,7 +763,7 @@ Describe 'after the script runs' {
         }
         #endregion
 
-        #region KillProcess
+        #region StopProcess
         Mock Get-Process {
             New-MockObject -Type 'System.Diagnostics.Process' -Properties $testData.Processes[0]
         } -ParameterFilter {
@@ -851,7 +851,7 @@ Describe 'after the script runs' {
                 $testExportedExcelRows = @(
                     @{
                         Task         = $i
-                        Part         = 'KillProcess'
+                        Part         = 'StopProcess'
                         ComputerName = $testData.Processes[0].MachineName
                         ProcessName  = $testData.Processes[0].ProcessName
                         Id           = $testData.Processes[0].Id
