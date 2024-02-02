@@ -595,7 +595,8 @@ Process {
                 ($invokeParams.ArgumentList[6] -join ',')
                 Write-Verbose $M; Write-EventLog @EventVerboseParams -Message $M
 
-
+                <#
+                # Debugging code
                 $params = @{
                     SetServiceAutomatic        = $invokeParams.ArgumentList[0]
                     SetServiceDelayedAutoStart =
@@ -609,6 +610,7 @@ Process {
                     ExecuteStartService        = $invokeParams.ArgumentList[6]
                 }
                 & $scriptBlock @params
+                #>
 
                 #region Start job
                 $computerName = $job.ComputerName

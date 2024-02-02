@@ -342,26 +342,67 @@ Context 'SetServiceStartupType' {
         Get-Service -Name $testName.Service |
         Set-Service -StartupType 'Disabled'
     }
-    It '<_>' -ForEach @('Automatic', 'Manual', 'Disabled') {
+    It '<_>' -ForEach @('Automatic', 'Manual', 'Disabled', 'DelayedAutoStart') {
         $testNewInputFile = Copy-ObjectHC $testInputFile
         $testNewInputFile.Tasks[0].SetServiceStartupType.$_ = $testName.Service
         $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
         .$testScript @testParams
 
-        (Get-Service -Name $testName.Service).StartType | Should -Be $_
+        if ($_ -eq 'DelayedAutoStart') {
+            (Get-Service -Name $testName.Service).StartType |
+            Should -Be 'Automatic'
+
+            Test-DelayedAutoStartHC -ServiceName $testName.Service |
+            Should -BeTrue
+        }
+        else {
+            (Get-Service -Name $testName.Service).StartType | Should -Be $_
+        }
     }
-    It 'DelayedAutoStart' {
+}
+Context 'Execute' {
+    BeforeAll {
+        Get-Service -Name $testName.Service |
+        Set-Service -StartupType 'Automatic'
+    }
+    It 'StopService' {
+        Start-Service -Name $testName.Service
+        (Get-Service -Name $testName.Service).Status | Should -Be 'Running'
+
         $testNewInputFile = Copy-ObjectHC $testInputFile
-        $testNewInputFile.Tasks[0].SetServiceStartupType.DelayedAutoStart = $testName.Service
+        $testNewInputFile.Tasks[0].Execute.StopService = $testName.Service
         $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
         .$testScript @testParams
 
-        (Get-Service -Name $testName.Service).StartType | Should -Be 'Automatic'
-        Test-DelayedAutoStartHC -ServiceName $testName.Service | Should -BeTrue
-    }  -Tag test
-}
+        (Get-Service -Name $testName.Service).Status | Should -Be 'Stopped'
+    }
+    It 'StartService' {
+        Stop-Service -Name $testName.Service
+        (Get-Service -Name $testName.Service).Status | Should -Be 'Stopped'
+
+        $testNewInputFile = Copy-ObjectHC $testInputFile
+        $testNewInputFile.Tasks[0].Execute.StartService = $testName.Service
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+        .$testScript @testParams
+
+        (Get-Service -Name $testName.Service).Status | Should -Be 'Running'
+    }
+    It 'StopProcess' {
+        Start-Process -FilePath $testName.Process
+        Get-Process -Name $testName.Process | Should -Not -BeNullOrEmpty
+
+        $testNewInputFile = Copy-ObjectHC $testInputFile
+        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process
+        $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+
+        .$testScript @testParams
+
+        Get-Process -Name $testName.Process -EA Ignore | Should -BeNullOrEmpty
+    }
+}  -Tag test
 Describe 'a service startup type in SetServiceStartupType is' {
     Context 'corrected when it is incorrect' {
         BeforeEach {
