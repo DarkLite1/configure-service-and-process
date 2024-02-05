@@ -336,11 +336,11 @@ Begin {
             if (-not ($mailTo = $file.SendMail.To)) {
                 throw "Property 'SendMail.To' not found."
             }
-            if (-not ($sendMailWhen = $file.SendMail.When)) {
+            if (-not ($mailWhen = $file.SendMail.When)) {
                 throw "Property 'SendMail.When' not found."
             }
-            if ($sendMailWhen -notMatch '^Never$|^Always$|^OnlyOnError$|^OnlyOnErrorOrAction$') {
-                throw "Property 'SendMail.When' with value '$sendMailWhen' is not valid. Accepted values are 'Always', 'Never', 'OnlyOnError' or 'OnlyOnErrorOrAction'"
+            if ($mailWhen -notMatch '^Never$|^Always$|^OnlyOnError$|^OnlyOnErrorOrAction$') {
+                throw "Property 'SendMail.When' with value '$mailWhen' is not valid. Accepted values are 'Always', 'Never', 'OnlyOnError' or 'OnlyOnErrorOrAction'"
             }
 
             if (-not ($MaxConcurrentJobs = $file.MaxConcurrentJobs)) {
@@ -716,14 +716,14 @@ End {
 
         if (
             (
-                ($sendMailWhen -eq 'Always')
+                ($mailWhen -eq 'Always')
             ) -or
             (
-                ($sendMailWhen -eq 'OnlyOnError') -and
+                ($mailWhen -eq 'OnlyOnError') -and
                 ($totalErrorCount)
             ) -or
             (
-                ($sendMailWhen -eq 'OnlyOnErrorOrAction') -and
+                ($mailWhen -eq 'OnlyOnErrorOrAction') -and
                 (
                     ($counter.rowsExportedToExcel -or ($totalErrorCount))
                 )
