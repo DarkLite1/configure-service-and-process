@@ -690,7 +690,7 @@ End {
         }
 
         #region Subject and Priority
-        $mailParams.Subject = '{0} row{1}' -f
+        $mailParams.Subject = '{0} row{1} exported' -f
         $counter.rowsExportedToExcel,
         $(if ($counter.rowsExportedToExcel -ne 1) { 's' })
 
@@ -753,7 +753,7 @@ End {
                 $(
                     if ($task.SetServiceStartupType.Automatic) {
                         "<tr>
-                            <td>Startup type 'Automatic'</td>
+                            <td>Set startup type 'Automatic'</td>
                             <td>$($task.SetServiceStartupType.Automatic -join ', ')</td>
                         </tr>"
                     }
@@ -761,7 +761,7 @@ End {
                 $(
                     if ($task.SetServiceStartupType.AutomaticDelayedStart) {
                         "<tr>
-                            <td>Startup type 'AutomaticDelayedStart'</td>
+                            <td>Set startup type 'AutomaticDelayedStart'</td>
                             <td>$($task.SetServiceStartupType.AutomaticDelayedStart -join ', ')</td>
                         </tr>"
                     }
@@ -769,7 +769,7 @@ End {
                 $(
                     if ($task.SetServiceStartupType.Disabled) {
                         "<tr>
-                            <td>Startup type 'Disabled'</td>
+                            <td>Set startup type 'Disabled'</td>
                             <td>$($task.SetServiceStartupType.Disabled -join ', ')</td>
                         </tr>"
                     }
@@ -777,7 +777,7 @@ End {
                 $(
                     if ($task.SetServiceStartupType.Manual) {
                         "<tr>
-                            <td>Startup type 'Manual'</td>
+                            <td>Set startup type 'Manual'</td>
                             <td>$($task.SetServiceStartupType.Manual -join ', ')</td>
                         </tr>"
                     }

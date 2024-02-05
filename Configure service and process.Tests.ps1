@@ -449,24 +449,21 @@ Describe 'when the script runs successfully' {
                 }
             }
         }
-    } -Tag test
+    }
     Context 'an e-mail is sent to the user' {
         BeforeAll {
             $testMail = @{
                 Header      = $testParams.ScriptName
-                To          = $testJsonFile.SendMail.To
-                Bcc         = $ScriptAdmin
+                To          = $testInputFile.SendMail.To
+                Bcc         = $testParams.ScriptAdmin
                 Priority    = 'Normal'
-                Subject     = '3 services, 1 process'
+                Subject     = '3 rows exported'
                 Message     = "*<p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>*
-                *<th*>Services</th>*
-                *<td>Rows</td>*3*
-                *<td>Actions</td>*3*
-                *<td>Errors</td>*0*
-                *<th*>Processes</th>*
-                *<td>Rows</td>*1*
-                *<td>Actions</td>*1*
-                *<td>Errors</td>*0*Check the attachment for details*"
+                *<th*>$ENV:COMPUTERNAME</th>*
+                *<td>Set startup type 'Automatic'</td>*bits*
+                *<td>Stop process</td>*notepad*
+                *<td>Start service</td>*bits*
+                *Check the attachment for details*"
                 Attachments = $testExcelLogFile.FullName
             }
         }
