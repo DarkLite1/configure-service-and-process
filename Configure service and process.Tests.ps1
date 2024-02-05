@@ -337,7 +337,7 @@ Context 'Execute' {
         (Get-Service -Name $testName.Service).Status | Should -Be 'Running'
     }
     It 'StopProcess' {
-        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'ignoreOutput'
+        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'NUL'
         Get-Process -Name $testName.Process.Name | Should -Not -BeNullOrEmpty
 
         $testNewInputFile = Copy-ObjectHC $testInputFile
@@ -355,7 +355,7 @@ Describe 'when the script runs successfully' {
         Stop-Service -Name $testName.Service
         Set-Service -Name $testName.Service -StartupType 'AutomaticDelayedStart'
 
-        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'ignoreOutput'
+        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'NUL'
         Get-Process -Name $testName.Process.Name | Select-Object -Skip 1 |
         Stop-Process
 
