@@ -406,9 +406,11 @@ Context 'Execute' {
 Describe 'when the script runs successfully' {
     BeforeAll {
         Get-Service -Name $testName.Service |
-        Set-Service -StartupType 'Automatic'
+        Set-Service -StartupType 'Manual'
         Start-Service -Name $testName.Service
         Start-Process -FilePath $testName.Process
+        Get-Process -Name $testName.Process | Select-Object -Skip 1 |
+        Stop-Process
 
         $testNewInputFile = Copy-ObjectHC $testInputFile
 
@@ -420,48 +422,45 @@ Describe 'when the script runs successfully' {
 
         .$testScript @testParams
 
-        $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Report.xlsx'
+        $testExcelLogFile = Get-ChildItem $testParams.LogFolder -File -Recurse -Filter '* - Log.xlsx'
     }
     Context 'an Excel file is created' {
-        Context "with worksheet 'Services'" {
+        Context "with worksheet 'Overview'" {
             BeforeAll {
                 $testExportedExcelRows = @(
                     @{
-                        Task         = 1
-                        Request      = 'SetServiceStartupType'
+                        TaskNr       = 1
+                        Request      = 'Set service startup type to DelayedAutoStart'
                         ComputerName = $env:COMPUTERNAME
-                        Name  = $testData.Services[0].Name
-                        DisplayName  = $testData.Services[0].DisplayName
-                        Status       = $testData.Services[0].Status
-                        StartupType  = 'Disabled'
-                        Action       = "updated StartupType from '$($testData.Services[0].StartType)' to 'Disabled'"
-                        Error        = $null
-                    }
-                    @{
-                        Task         = 1
-                        Request      = 'StopService'
-                        ComputerName = $env:COMPUTERNAME
-                        Name  = $testData.Services[1].Name
-                        DisplayName  = $testData.Services[1].DisplayName
-                        Status       = 'Stopped'
-                        StartupType  = 'DelayedAutoStart'
-                        Action       = 'stopped service'
-                        Error        = $null
-                    }
-                    @{
-                        Task         = 1
-                        Request      = 'StartService'
-                        ComputerName = $env:COMPUTERNAME
-                        Name  = $testData.Services[2].Name
-                        DisplayName  = $testData.Services[2].DisplayName
+                        Name         = $testName.Service
                         Status       = 'Running'
                         StartupType  = 'DelayedAutoStart'
-                        Action       = 'started service'
+                        Action       = "Updated startup type from 'Automatic' to 'DelayedAutoStart'"
+                        Error        = $null
+                    }
+                    @{
+                        TaskNr       = 1
+                        Request      = 'Stop process'
+                        ComputerName = $env:COMPUTERNAME
+                        Name         = $testName.Process
+                        Status       = 'Stopped'
+                        StartupType  = $null
+                        Action       = 'Stopped process'
+                        Error        = $null
+                    }
+                    @{
+                        TaskNr       = 1
+                        Request      = 'Stop service'
+                        ComputerName = $env:COMPUTERNAME
+                        Name         = $testName.Service
+                        Status       = 'Stopped'
+                        StartupType  = 'DelayedAutoStart'
+                        Action       = 'Stopped service'
                         Error        = $null
                     }
                 )
 
-                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Services'
+                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Overview'
             }
             It 'in the log folder' {
                 $testExcelLogFile | Should -Not -BeNullOrEmpty
@@ -472,62 +471,22 @@ Describe 'when the script runs successfully' {
             It 'with the correct data in the rows' {
                 foreach ($testRow in $testExportedExcelRows) {
                     $actualRow = $actual | Where-Object {
-                        $_.Name -eq $testRow.Name
+                        $_.Request -eq $testRow.Request
                     }
                     $actualRow.Task | Should -Be $testRow.Task
                     $actualRow.Request | Should -Be $testRow.Request
                     $actualRow.ComputerName | Should -Be $testRow.ComputerName
-                    $actualRow.DisplayName | Should -Be $testRow.DisplayName
-                    $actualRow.Name | Should -Be $testRow.Name
+                    $actualRow.Name | Should -BeLike "$($testRow.Name)*"
                     $actualRow.Status | Should -Be $testRow.Status
                     $actualRow.StartupType | Should -Be $testRow.StartupType
                     $actualRow.Action | Should -Be $testRow.Action
                     $actualRow.Error | Should -Be $testRow.Error
-                    $actualRow.Date.ToString('yyyyMMdd HHmm') |
+                    $actualRow.DateTime.ToString('yyyyMMdd HHmm') |
                     Should -Not -BeNullOrEmpty
                 }
             }
         }
-        Context "with worksheet 'Processes'" {
-            BeforeAll {
-                $testExportedExcelRows = @(
-                    @{
-                        Task         = $i
-                        Request      = 'StopProcess'
-                        ComputerName = $testData.Processes[0].MachineName
-                        ProcessName  = $testData.Processes[0].ProcessName
-                        Id           = $testData.Processes[0].Id
-                        Action       = 'stopped running process'
-                        Error        = $null
-                    }
-                )
-
-                $actual = Import-Excel -Path $testExcelLogFile.FullName -WorksheetName 'Processes'
-            }
-            It 'in the log folder' {
-                $testExcelLogFile | Should -Not -BeNullOrEmpty
-            }
-            It 'with the correct total rows' {
-                $actual | Should -HaveCount $testExportedExcelRows.Count
-            }
-            It 'with the correct data in the rows' {
-                foreach ($testRow in $testExportedExcelRows) {
-                    $actualRow = $actual | Where-Object {
-                        $_.ProcessName -eq $testRow.ProcessName
-                    }
-                    $actualRow.Task | Should -Be $testRow.Task
-                    $actualRow.Request | Should -Be $testRow.Request
-                    $actualRow.ComputerName | Should -Be $testRow.ComputerName
-                    $actualRow.ProcessName | Should -Be $testRow.ProcessName
-                    $actualRow.Id | Should -Be $testRow.Id
-                    $actualRow.Action | Should -Be $testRow.Action
-                    $actualRow.Error | Should -Be $testRow.Error
-                    $actualRow.Date.ToString('yyyyMMdd HHmm') |
-                    Should -Not -BeNullOrEmpty
-                }
-            }
-        }
-    }
+    } -Tag test
     Context 'an e-mail is sent to the user' {
         BeforeAll {
             $testMail = @{

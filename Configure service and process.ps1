@@ -119,7 +119,7 @@ Begin {
             )
             try {
                 $result = [PSCustomObject]@{
-                    Request     = "SetServiceStartupType to $StartupTypeName"
+                    Request     = "Set service startup type to $StartupTypeName"
                     Date        = Get-Date
                     Name        = $ServiceName
                     StartupType = $null
@@ -135,7 +135,7 @@ Begin {
                 }
                 $service = Get-Service @params
 
-                $result.Status = $service.Status
+                $result.Status = $service.Status.ToString()
 
                 $result.StartupType = if (
                     ($service.StartType -eq 'Automatic') -and
@@ -161,7 +161,7 @@ Begin {
                         $service | Set-Service @setParams
                     }
 
-                    $result.Action = "Updated StartupType from '$($result.StartupType)' to '$StartupTypeName'"
+                    $result.Action = "Updated startup type from '$($result.StartupType)' to '$StartupTypeName'"
 
                     $result.StartupType = $StartupTypeName
                 }
@@ -228,7 +228,7 @@ Begin {
             try {
                 $result = [PSCustomObject]@{
                     Date        = Get-Date
-                    Request     = 'StopService'
+                    Request     = 'Stop service'
                     Name        = $serviceName
                     StartupType = $null
                     Status      = $null
@@ -243,7 +243,7 @@ Begin {
                 $service = Get-Service @params
 
                 #region Get service state
-                $result.Status = $service.Status
+                $result.Status = $service.Status.ToString().ToString()
 
                 $result.StartupType = if (
                     ($service.StartType -eq 'Automatic') -and
@@ -257,11 +257,11 @@ Begin {
                 #endregion
 
                 #region Stop service
-                if ($service.Status -ne 'Stopped') {
+                if ($result.Status -ne 'Stopped') {
                     $service | Stop-Service -ErrorAction 'Stop' -Force
 
-                    $result.Action = 'Stopped service'
                     $result.Status = 'Stopped'
+                    $result.Action = 'Stopped service'
                 }
                 #endregion
             }
@@ -275,7 +275,7 @@ Begin {
         }
         #endregion
 
-        #region Kill process
+        #region Stop process
         foreach ($processName in $ExecuteStopProcess) {
             $params = @{
                 Name        = $processName
@@ -287,7 +287,7 @@ Begin {
                 try {
                     $result = [PSCustomObject]@{
                         Date        = Get-Date
-                        Request     = 'StopProcess'
+                        Request     = 'Stop process'
                         Name        = '{0} (ID {1})' -f $processName, $process.Id
                         StartupType = $null
                         Status      = 'Running'
@@ -298,7 +298,7 @@ Begin {
                     Stop-ProcessHC -ProcessName $processName -EA Stop
 
                     $result.Status = 'Stopped'
-                    $result.Action = 'Stopped running process'
+                    $result.Action = 'Stopped process'
                 }
                 catch {
                     $result.Error = $_
@@ -316,7 +316,7 @@ Begin {
             try {
                 $result = [PSCustomObject]@{
                     Date        = Get-Date
-                    Request     = 'StartService'
+                    Request     = 'Start service'
                     Name        = $serviceName
                     StartupType = $null
                     Status      = $null
@@ -331,7 +331,7 @@ Begin {
                 $service = Get-Service @params
 
                 #region Get service state before
-                $result.Status = $service.Status
+                $result.Status = $service.Status.ToString()
 
                 $result.StartupType = if (
                     ($service.StartType -eq 'Automatic') -and
@@ -760,7 +760,7 @@ End {
         }
 
         #region Subject and Priority
-        $mailParams.Subject = '{0} action{1}' -f
+        $mailParams.Subject = '{0} row{1}' -f
         $counter.rowsExportedToExcel,
         $(if ($counter.rowsExportedToExcel -ne 1) { 's' })
 
