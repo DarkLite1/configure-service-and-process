@@ -818,7 +818,9 @@ End {
             $htmlTable
             {0}" -f $(
             if ($mailParams.Attachments) {
-                '<p><i>* Check the attachment for details</i></p>'
+                "<p><i>* Exported <b>{0} row{1}</b> to Excel, check the attachment for details</i></p>" -f
+                $counter.rowsExportedToExcel,
+                $(if ($counter.rowsExportedToExcel -ne 1) { 's' })
             }
         )
 

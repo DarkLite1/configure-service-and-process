@@ -463,7 +463,7 @@ Describe 'when the script runs successfully' {
                 *<td>Set startup type 'Automatic'</td>*bits*
                 *<td>Stop process</td>*notepad*
                 *<td>Start service</td>*bits*
-                *Check the attachment for details*"
+                *Exported <b>3 rows</b> to Excel, check the attachment for details*"
                 Attachments = $testExcelLogFile.FullName
             }
         }
