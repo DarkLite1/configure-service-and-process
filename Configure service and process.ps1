@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7
 #Requires -Modules ImportExcel, Toolbox.HTML, Toolbox.EventLog
 
 <#
@@ -20,8 +20,8 @@
 
         Valid values:
         - Automatic
+        - AutomaticDelayedStart
         - Disabled
-        - DelayedAutostart
         - Manual
 
     .PARAMETER Action
@@ -48,7 +48,7 @@ Begin {
     $scriptBlock = {
         Param (
             [String[]]$SetServiceAutomatic,
-            [String[]]$SetServiceDelayedAutoStart,
+            [String[]]$SetServiceAutomaticDelayedStart,
             [String[]]$SetServiceDisabled,
             [String[]]$SetServiceManual,
             [String[]]$ExecuteStopService,
@@ -56,62 +56,13 @@ Begin {
             [String[]]$ExecuteStartService
         )
 
-        Function Test-DelayedAutoStartHC {
-            Param (
-                [parameter(Mandatory)]
-                [alias('Name')]
-                [String]$ServiceName
-            )
-
-            try {
-                $params = @{
-                    Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
-                    ErrorAction = 'Stop'
-                }
-                $property = Get-ItemProperty @params
-
-                if (
-                    ($property.Start -eq 2) -and
-                    ($property.DelayedAutostart -eq 1)
-                ) {
-                    $true
-                }
-                else {
-                    $false
-                }
-            }
-            catch {
-                $M = $_; $Error.RemoveAt(0)
-                throw "Failed testing if 'DelayedAutostart' is set: $M"
-            }
-        }
-        Function Set-DelayedAutoStartHC {
-            Param (
-                [parameter(Mandatory)]
-                [alias('Name')]
-                [String]$ServiceName
-            )
-
-            try {
-                $params = @{
-                    Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
-                    ErrorAction = 'Stop'
-                }
-                Set-ItemProperty @params -Name 'Start' -Value 2
-                Set-ItemProperty @params -Name 'DelayedAutostart' -Value 1
-            }
-            catch {
-                $M = $_; $Error.RemoveAt(0)
-                throw "Failed to enable 'DelayedAutostart': $M"
-            }
-        }
         Function Set-ServiceStartupTypeHC {
             Param (
                 [parameter(Mandatory)]
                 [alias('Name')]
                 [String]$ServiceName,
                 [ValidateSet(
-                    'Automatic', 'DelayedAutoStart',
+                    'Automatic', 'AutomaticDelayedStart',
                     'Disabled', 'Manual'
                 )]
                 [Parameter(Mandatory)]
@@ -135,37 +86,34 @@ Begin {
                 }
                 $service = Get-Service @params
 
+                $result.StartupType = $service.StartupType.ToString()
                 $result.Status = $service.Status.ToString()
-
-                $result.StartupType = if (
-                    ($service.StartType -eq 'Automatic') -and
-                    (Test-DelayedAutoStartHC @params)
-                ) {
-                    'DelayedAutoStart'
-                }
-                else {
-                    $service.StartType
-                }
                 #endregion
 
-                #region Set service startup type
                 if ($StartupTypeName -ne $result.StartupType) {
-                    if ($StartupTypeName -eq 'DelayedAutoStart') {
-                        Set-DelayedAutoStartHC @params
+                    #region Set service startup type
+                    $setParams = @{
+                        StartupType = $StartupTypeName
+                        ErrorAction = 'Stop'
                     }
-                    else {
-                        $setParams = @{
-                            StartupType = $StartupTypeName
-                            ErrorAction = 'Stop'
-                        }
-                        $service | Set-Service @setParams
-                    }
+                    $service | Set-Service @setParams
 
                     $result.Action = "Updated startup type from '$($result.StartupType)' to '$StartupTypeName'"
 
                     $result.StartupType = $StartupTypeName
+                    #endregion
+
+                    #region Get service state
+                    $params = @{
+                        Name        = $ServiceName
+                        ErrorAction = 'Stop'
+                    }
+                    $service = Get-Service @params
+
+                    $result.Status = $service.Status.ToString()
+                    $result.StartupType = $service.StartupType.ToString()
+                    #endregion
                 }
-                #endregion
             }
             catch {
                 $result.Error = $_
@@ -200,10 +148,10 @@ Begin {
             }
             Set-ServiceStartupTypeHC @params
         }
-        foreach ($serviceName in $SetServiceDelayedAutoStart) {
+        foreach ($serviceName in $SetServiceAutomaticDelayedStart) {
             $params = @{
                 ServiceName     = $serviceName
-                StartupTypeName = 'DelayedAutoStart'
+                StartupTypeName = 'AutomaticDelayedStart'
             }
             Set-ServiceStartupTypeHC @params
         }
@@ -243,17 +191,8 @@ Begin {
                 $service = Get-Service @params
 
                 #region Get service state
-                $result.Status = $service.Status.ToString().ToString()
-
-                $result.StartupType = if (
-                    ($service.StartType -eq 'Automatic') -and
-                    (Test-DelayedAutoStartHC @params)
-                ) {
-                    'DelayedAutoStart'
-                }
-                else {
-                    $service.StartType
-                }
+                $result.Status = $service.Status.ToString()
+                $result.StartupType = $service.StartupType.ToString()
                 #endregion
 
                 #region Stop service
@@ -330,18 +269,9 @@ Begin {
                 }
                 $service = Get-Service @params
 
-                #region Get service state before
+                #region Get service state
                 $result.Status = $service.Status.ToString()
-
-                $result.StartupType = if (
-                    ($service.StartType -eq 'Automatic') -and
-                    (Test-DelayedAutoStartHC @params)
-                ) {
-                    'DelayedAutoStart'
-                }
-                else {
-                    $service.StartType
-                }
+                $result.StartupType = $service.StartupType.ToString()
                 #endregion
 
                 #region Start service
@@ -394,7 +324,7 @@ Begin {
 
         $accepted = @{
             serviceStartupTypes = @(
-                'Automatic', 'DelayedAutoStart', 'Disabled', 'Manual'
+                'Automatic', 'AutomaticDelayedStart', 'Disabled', 'Manual'
             )
             executionTypes      = @(
                 'StopService', 'StopProcess', 'StartService'
@@ -569,7 +499,7 @@ Process {
             $invokeParams = @{
                 ScriptBlock  = $scriptBlock
                 ArgumentList = $task.SetServiceStartupType.Automatic,
-                $task.SetServiceStartupType.DelayedAutoStart,
+                $task.SetServiceStartupType.AutomaticDelayedStart,
                 $task.SetServiceStartupType.Disabled,
                 $task.SetServiceStartupType.Manual,
                 $task.Execute.StopService,
@@ -578,7 +508,7 @@ Process {
             }
 
             foreach ($job in $task.Jobs) {
-                $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}'" -f
+                $M = "Start job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.AutomaticDelayedStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}'" -f
                 $job.ComputerName,
                 ($invokeParams.ArgumentList[0] -join ','),
                 ($invokeParams.ArgumentList[1] -join ','),
@@ -592,16 +522,16 @@ Process {
                 <#
                 # Debugging code
                 $params = @{
-                    SetServiceAutomatic        = $invokeParams.ArgumentList[0]
-                    SetServiceDelayedAutoStart =
+                    SetServiceAutomatic             = $invokeParams.ArgumentList[0]
+                    SetServiceAutomaticDelayedStart =
                     $invokeParams.ArgumentList[1]
-                    SetServiceDisabled         =
+                    SetServiceDisabled              =
                     $invokeParams.ArgumentList[2]
-                    SetServiceManual           =
+                    SetServiceManual                =
                     $invokeParams.ArgumentList[3]
-                    ExecuteStopService         = $invokeParams.ArgumentList[4]
-                    ExecuteStopProcess         = $invokeParams.ArgumentList[5]
-                    ExecuteStartService        = $invokeParams.ArgumentList[6]
+                    ExecuteStopService              = $invokeParams.ArgumentList[4]
+                    ExecuteStopProcess              = $invokeParams.ArgumentList[5]
+                    ExecuteStartService             = $invokeParams.ArgumentList[6]
                 }
                 & $scriptBlock @params
                 #>
@@ -669,7 +599,7 @@ Process {
                     $job.Errors += $e.ToString()
                     $Error.Remove($e)
 
-                    $M = "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
+                    $M = "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.AutomaticDelayedStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
                     $job.ComputerName,
                     ($invokeParams.ArgumentList[0] -join ','),
                     ($invokeParams.ArgumentList[1] -join ','),
@@ -796,10 +726,10 @@ End {
                     $task.Jobs | Where-Object { $_.Errors }
                 ) {
                     foreach ($e in $job.Errors) {
-                        "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.DelayedAutoStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
+                        "Failed job on '{0}' with SetServiceStartupType.Automatic '{1}' SetServiceStartupType.AutomaticDelayedStart '{2}' SetServiceStartupType.Disabled '{3}' SetServiceStartupType.Manual '{4}' Execute.StopService '{5}' Execute.StopProcess '{6}' Execute.StartService '{7}': {8}" -f
                         $job.ComputerName,
                         ($task.SetServiceStartupType.Automatic -join ','),
-                        ($task.SetServiceStartupType.DelayedAutoStart -join ','),
+                        ($task.SetServiceStartupType.AutomaticDelayedStart -join ','),
                         ($task.SetServiceStartupType.Disabled -join ','),
                         ($task.SetServiceStartupType.Manual -join ','),
                         ($task.Execute.StopService -join ','),
@@ -829,10 +759,10 @@ End {
                     }
                 )
                 $(
-                    if ($task.SetServiceStartupType.DelayedAutoStart) {
+                    if ($task.SetServiceStartupType.AutomaticDelayedStart) {
                         "<tr>
-                            <td>Startup type 'DelayedAutoStart'</td>
-                            <td>$($task.SetServiceStartupType.DelayedAutoStart -join ', ')</td>
+                            <td>Startup type 'AutomaticDelayedStart'</td>
+                            <td>$($task.SetServiceStartupType.AutomaticDelayedStart -join ', ')</td>
                         </tr>"
                     }
                 )

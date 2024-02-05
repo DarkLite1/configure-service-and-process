@@ -16,10 +16,10 @@ BeforeAll {
             @{
                 ComputerName          = @($env:COMPUTERNAME)
                 SetServiceStartupType = @{
-                    Automatic        = @()
-                    DelayedAutoStart = @()
-                    Disabled         = @()
-                    Manual           = @()
+                    Automatic             = @()
+                    AutomaticDelayedStart = @()
+                    Disabled              = @()
+                    Manual                = @()
                 }
                 Execute               = @{
                     StopService  = @()
@@ -41,36 +41,6 @@ BeforeAll {
         ScriptAdmin = 'admin@contoso.com'
         ImportFile  = $testOutParams.FilePath
         LogFolder   = New-Item 'TestDrive:/log' -ItemType Directory
-    }
-
-    Function Test-DelayedAutoStartHC {
-        Param (
-            [parameter(Mandatory)]
-            [alias('Name')]
-            [String]$ServiceName
-        )
-
-        try {
-            $params = @{
-                Path        = 'HKLM:\SYSTEM\CurrentControlSet\Services\{0}' -f $ServiceName
-                ErrorAction = 'Stop'
-            }
-            $property = Get-ItemProperty @params
-
-            if (
-                ($property.Start -eq 2) -and
-                ($property.DelayedAutostart -eq 1)
-            ) {
-                $true
-            }
-            else {
-                $false
-            }
-        }
-        catch {
-            $M = $_; $Error.RemoveAt(0)
-            throw "Failed testing if 'DelayedAutostart' is set: $M"
-        }
     }
 
     Mock Send-MailHC
@@ -108,10 +78,10 @@ Describe 'send an e-mail to the admin when' {
                     @{
                         ComputerName          = @('PC1')
                         SetServiceStartupType = @{
-                            Automatic        = @()
-                            DelayedAutostart = @()
-                            Disabled         = @()
-                            Manual           = @()
+                            Automatic             = @()
+                            AutomaticDelayedStart = @()
+                            Disabled              = @()
+                            Manual                = @()
                         }
                         Execute               = @{
                             StopService  = @()
@@ -158,7 +128,7 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'Tasks.SetServiceStartupType.<_>' -ForEach @(
-                'Automatic', 'DelayedAutostart', 'Disabled', 'Manual'
+                'Automatic', 'AutomaticDelayedStart', 'Disabled', 'Manual'
             ) {
                 $testJsonFile.Tasks[0].SetServiceStartupType.Remove($_)
                 $testJsonFile | ConvertTo-Json -Depth 5 |
@@ -342,23 +312,16 @@ Context 'SetServiceStartupType' {
         Get-Service -Name $testName.Service |
         Set-Service -StartupType 'Disabled'
     }
-    It '<_>' -ForEach @('Automatic', 'Manual', 'Disabled', 'DelayedAutoStart') {
+    It '<_>' -ForEach @(
+        'Automatic', 'AutomaticDelayedStart', 'Manual', 'Disabled'
+    ) {
         $testNewInputFile = Copy-ObjectHC $testInputFile
         $testNewInputFile.Tasks[0].SetServiceStartupType.$_ = $testName.Service
         $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
         .$testScript @testParams
 
-        if ($_ -eq 'DelayedAutoStart') {
-            (Get-Service -Name $testName.Service).StartType |
-            Should -Be 'Automatic'
-
-            Test-DelayedAutoStartHC -ServiceName $testName.Service |
-            Should -BeTrue
-        }
-        else {
-            (Get-Service -Name $testName.Service).StartType | Should -Be $_
-        }
+        (Get-Service -Name $testName.Service).StartupType | Should -Be $_
     }
 }
 Context 'Execute' {
@@ -405,9 +368,9 @@ Context 'Execute' {
 }
 Describe 'when the script runs successfully' {
     BeforeAll {
-        Get-Service -Name $testName.Service |
-        Set-Service -StartupType 'Manual'
-        Start-Service -Name $testName.Service
+        Stop-Service -Name $testName.Service
+        Set-Service -Name $testName.Service -StartupType 'AutomaticDelayedStart'
+
         Start-Process -FilePath $testName.Process
         Get-Process -Name $testName.Process | Select-Object -Skip 1 |
         Stop-Process
@@ -415,8 +378,8 @@ Describe 'when the script runs successfully' {
         $testNewInputFile = Copy-ObjectHC $testInputFile
 
         $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process
-        $testNewInputFile.Tasks[0].Execute.StopService = $testName.Service
-        $testNewInputFile.Tasks[0].SetServiceStartupType.DelayedAutoStart = $testName.Service
+        $testNewInputFile.Tasks[0].Execute.StartService = $testName.Service
+        $testNewInputFile.Tasks[0].SetServiceStartupType.Automatic = $testName.Service
 
         $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
@@ -430,12 +393,12 @@ Describe 'when the script runs successfully' {
                 $testExportedExcelRows = @(
                     @{
                         TaskNr       = 1
-                        Request      = 'Set service startup type to DelayedAutoStart'
+                        Request      = 'Set service startup type to Automatic'
                         ComputerName = $env:COMPUTERNAME
                         Name         = $testName.Service
-                        Status       = 'Running'
-                        StartupType  = 'DelayedAutoStart'
-                        Action       = "Updated startup type from 'Automatic' to 'DelayedAutoStart'"
+                        Status       = 'Stopped'
+                        StartupType  = 'Automatic'
+                        Action       = "Updated startup type from 'AutomaticDelayedStart' to 'Automatic'"
                         Error        = $null
                     }
                     @{
@@ -450,12 +413,12 @@ Describe 'when the script runs successfully' {
                     }
                     @{
                         TaskNr       = 1
-                        Request      = 'Stop service'
+                        Request      = 'Start service'
                         ComputerName = $env:COMPUTERNAME
                         Name         = $testName.Service
-                        Status       = 'Stopped'
-                        StartupType  = 'DelayedAutoStart'
-                        Action       = 'Stopped service'
+                        Status       = 'Running'
+                        StartupType  = 'Automatic'
+                        Action       = 'Started service'
                         Error        = $null
                     }
                 )
