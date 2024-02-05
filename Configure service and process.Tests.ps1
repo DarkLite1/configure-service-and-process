@@ -9,7 +9,8 @@ BeforeAll {
 
     $testInputFile = @{
         SendMail          = @{
-            To = 'bob@contoso.com'
+            To   = 'bob@contoso.com'
+            When = 'Always'
         }
         MaxConcurrentJobs = 5
         Tasks             = @(
@@ -72,28 +73,7 @@ Describe 'send an e-mail to the admin when' {
     }
     Context 'the ImportFile' {
         BeforeEach {
-            $testJsonFile = @{
-                MaxConcurrentJobs = 5
-                Tasks             = @(
-                    @{
-                        ComputerName          = @('PC1')
-                        SetServiceStartupType = @{
-                            Automatic             = @()
-                            AutomaticDelayedStart = @()
-                            Disabled              = @()
-                            Manual                = @()
-                        }
-                        Execute               = @{
-                            StopService  = @()
-                            StopProcess  = @()
-                            StartService = @()
-                        }
-                    }
-                )
-                SendMail          = @{
-                    To = 'bob@contoso.com'
-                }
-            }
+            $testNewInputFile = Copy-ObjectHC $testInputFile
         }
         It 'is not found' {
             $testNewParams = $testParams.clone()
@@ -113,8 +93,8 @@ Describe 'send an e-mail to the admin when' {
             It 'Tasks.<_>' -ForEach @(
                 'ComputerName', 'SetServiceStartupType', 'Execute'
             ) {
-                $testJsonFile.Tasks[0].Remove($_)
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].Remove($_)
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -130,8 +110,8 @@ Describe 'send an e-mail to the admin when' {
             It 'Tasks.SetServiceStartupType.<_>' -ForEach @(
                 'Automatic', 'AutomaticDelayedStart', 'Disabled', 'Manual'
             ) {
-                $testJsonFile.Tasks[0].SetServiceStartupType.Remove($_)
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].SetServiceStartupType.Remove($_)
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -147,8 +127,8 @@ Describe 'send an e-mail to the admin when' {
             It 'Tasks.Execute.<_>' -ForEach @(
                 'StopService', 'StopProcess', 'StartService'
             ) {
-                $testJsonFile.Tasks[0].Execute.Remove($_)
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].Execute.Remove($_)
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -162,8 +142,8 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'SendMail.To' {
-                $testJsonFile.SendMail.Remove('To')
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.SendMail.Remove('To')
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -179,8 +159,8 @@ Describe 'send an e-mail to the admin when' {
         }
         Context 'is missing content for property' {
             It 'MaxConcurrentJobs' {
-                $testJsonFile.MaxConcurrentJobs = 'a'
-                $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+                $testNewInputFile.MaxConcurrentJobs = 'a'
+                $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
                 .$testScript @testParams
 
@@ -193,8 +173,8 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'MaxConcurrentJobs' {
-                $testJsonFile.MaxConcurrentJobs = $null
-                $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+                $testNewInputFile.MaxConcurrentJobs = $null
+                $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
                 .$testScript @testParams
 
@@ -207,8 +187,8 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'Tasks' {
-                $testJsonFile.Tasks = @()
-                $testJsonFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
+                $testNewInputFile.Tasks = @()
+                $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
                 .$testScript @testParams
 
@@ -221,8 +201,8 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'Tasks.ComputerName' {
-                $testJsonFile.Tasks[0].ComputerName = @()
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].ComputerName = @()
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -236,8 +216,8 @@ Describe 'send an e-mail to the admin when' {
                 }
             }
             It 'Tasks.SetServiceStartupType and Tasks.Execute' {
-                $testJsonFile.Tasks[0].ComputerName = @('PC1')
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].ComputerName = @('PC1')
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -253,11 +233,11 @@ Describe 'send an e-mail to the admin when' {
         }
         Context 'contains incorrect content' {
             BeforeEach {
-                $testJsonFile.Tasks[0].Execute.StopProcess = @('chrome')
+                $testNewInputFile.Tasks[0].Execute.StopProcess = @('chrome')
             }
             It 'duplicate ComputerName' {
-                $testJsonFile.Tasks[0].ComputerName = @('PC1', 'PC1', 'PC2')
-                $testJsonFile | ConvertTo-Json -Depth 5 |
+                $testNewInputFile.Tasks[0].ComputerName = @('PC1', 'PC1', 'PC2')
+                $testNewInputFile | ConvertTo-Json -Depth 5 |
                 Out-File @testOutParams
 
                 .$testScript @testParams
@@ -272,9 +252,9 @@ Describe 'send an e-mail to the admin when' {
             }
             Context 'ServiceStartupType' {
                 It 'is set to Disabled but StartService is used' {
-                    $testJsonFile.Tasks[0].SetServiceStartupType.Disabled = @('x')
-                    $testJsonFile.Tasks[0].Execute.StartService = @('x')
-                    $testJsonFile | ConvertTo-Json -Depth 5 |
+                    $testNewInputFile.Tasks[0].SetServiceStartupType.Disabled = @('x')
+                    $testNewInputFile.Tasks[0].Execute.StartService = @('x')
+                    $testNewInputFile | ConvertTo-Json -Depth 5 |
                     Out-File @testOutParams
 
                     .$testScript @testParams
@@ -288,9 +268,9 @@ Describe 'send an e-mail to the admin when' {
                     }
                 }
                 It 'contains the same service name for different startup types' {
-                    $testJsonFile.Tasks[0].SetServiceStartupType.Manual = @('x')
-                    $testJsonFile.Tasks[0].SetServiceStartupType.Disabled = @('x')
-                    $testJsonFile | ConvertTo-Json -Depth 5 |
+                    $testNewInputFile.Tasks[0].SetServiceStartupType.Manual = @('x')
+                    $testNewInputFile.Tasks[0].SetServiceStartupType.Disabled = @('x')
+                    $testNewInputFile | ConvertTo-Json -Depth 5 |
                     Out-File @testOutParams
 
                     .$testScript @testParams

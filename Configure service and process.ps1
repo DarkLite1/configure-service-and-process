@@ -336,6 +336,12 @@ Begin {
             if (-not ($mailTo = $file.SendMail.To)) {
                 throw "Property 'SendMail.To' not found."
             }
+            if (-not ($sendMailWhen = $file.SendMail.When)) {
+                throw "Property 'SendMail.When' not found."
+            }
+            if ($sendMailWhen -notMatch '^Never$|^Always$|^OnlyOnError$|^OnlyOnErrorOrAction$') {
+                throw "Property 'SendMail.When' with value '$sendMailWhen' is not valid. Accepted values are 'Always', 'Never', 'OnlyOnError' or 'OnlyOnErrorOrAction'"
+            }
 
             if (-not ($MaxConcurrentJobs = $file.MaxConcurrentJobs)) {
                 throw "Property 'MaxConcurrentJobs' not found"
@@ -705,6 +711,28 @@ End {
         }
         #endregion
 
+        #region Check to send mail to user
+        $sendMailToUser = $false
+
+        if (
+            (
+                ($sendMailWhen -eq 'Always')
+            ) -or
+            (
+                ($sendMailWhen -eq 'OnlyOnError') -and
+                ($totalErrorCount)
+            ) -or
+            (
+                ($sendMailWhen -eq 'OnlyOnErrorOrAction') -and
+                (
+                    ($counter.rowsExportedToExcel -or ($totalErrorCount))
+                )
+            )
+        ) {
+            $sendMailToUser = $true
+        }
+        #endregion
+
         #region Create system errors HTML list
         $systemErrorsHtmlList = if ($counter.errors.system) {
             "<p>Detected <b>{0} error{1}:{2}</p>" -f $counter.errors.system,
@@ -825,7 +853,25 @@ End {
         )
 
         Get-ScriptRuntimeHC -Stop
-        Send-MailHC @mailParams
+
+        if ($sendMailToUser) {
+            Write-Verbose 'Send e-mail to the user'
+
+            if ($counter.Total.Errors) {
+                $mailParams.Bcc = $ScriptAdmin
+            }
+            Send-MailHC @mailParams
+        }
+        else {
+            Write-Verbose 'Send no e-mail to the user'
+
+            if ($totalErrorCount) {
+                Write-Verbose 'Send e-mail to admin only with errors'
+
+                $mailParams.To = $ScriptAdmin
+                Send-MailHC @mailParams
+            }
+        }
         #endregion
     }
     Catch {
