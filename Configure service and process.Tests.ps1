@@ -3,7 +3,10 @@
 
 BeforeAll {
     $testName = @{
-        Process = 'notepad'
+        Process = @{
+            Path = "$PSScriptRoot/Test process/helloworld.exe"
+            Name = 'helloworld'
+        }
         Service = 'bits'
     }
 
@@ -334,16 +337,17 @@ Context 'Execute' {
         (Get-Service -Name $testName.Service).Status | Should -Be 'Running'
     }
     It 'StopProcess' {
-        Start-Process -FilePath $testName.Process
-        Get-Process -Name $testName.Process | Should -Not -BeNullOrEmpty
+        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'ignoreOutput'
+        Get-Process -Name $testName.Process.Name | Should -Not -BeNullOrEmpty
 
         $testNewInputFile = Copy-ObjectHC $testInputFile
-        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process
+        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process.Name
         $testNewInputFile | ConvertTo-Json -Depth 5 | Out-File @testOutParams
 
         .$testScript @testParams
 
-        Get-Process -Name $testName.Process -EA Ignore | Should -BeNullOrEmpty
+        Get-Process -Name $testName.Process.Name -EA Ignore |
+        Should -BeNullOrEmpty
     }
 }
 Describe 'when the script runs successfully' {
@@ -351,13 +355,13 @@ Describe 'when the script runs successfully' {
         Stop-Service -Name $testName.Service
         Set-Service -Name $testName.Service -StartupType 'AutomaticDelayedStart'
 
-        Start-Process -FilePath $testName.Process
-        Get-Process -Name $testName.Process | Select-Object -Skip 1 |
+        Start-Process -FilePath $testName.Process.Path -NoNewWindow -RedirectStandardOutput 'ignoreOutput'
+        Get-Process -Name $testName.Process.Name | Select-Object -Skip 1 |
         Stop-Process
 
         $testNewInputFile = Copy-ObjectHC $testInputFile
 
-        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process
+        $testNewInputFile.Tasks[0].Execute.StopProcess = $testName.Process.Name
         $testNewInputFile.Tasks[0].Execute.StartService = $testName.Service
         $testNewInputFile.Tasks[0].SetServiceStartupType.Automatic = $testName.Service
 
@@ -385,7 +389,7 @@ Describe 'when the script runs successfully' {
                         TaskNr       = 1
                         Request      = 'Stop process'
                         ComputerName = $env:COMPUTERNAME
-                        Name         = $testName.Process
+                        Name         = $testName.Process.Name
                         Status       = 'Stopped'
                         StartupType  = $null
                         Action       = 'Stopped process'
@@ -441,7 +445,7 @@ Describe 'when the script runs successfully' {
                 Message     = "*<p>Manage services and processes: configure the service startup type, stop a service, stop a process, start a service.</p>*
                 *<th*>$ENV:COMPUTERNAME</th>*
                 *<td>Set startup type 'Automatic'</td>*bits*
-                *<td>Stop process</td>*notepad*
+                *<td>Stop process</td>*$($testName.Process.Name)*
                 *<td>Start service</td>*bits*
                 *Exported <b>3 rows</b> to Excel, check the attachment for details*"
                 Attachments = $testExcelLogFile.FullName
@@ -467,5 +471,5 @@ Describe 'when the script runs successfully' {
                 ($Message -like $testMail.Message)
             }
         }
-    }
+    } -tag test
 }
