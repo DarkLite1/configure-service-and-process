@@ -546,7 +546,12 @@ Process {
                 $computerName = $job.ComputerName
 
                 try {
-                    $job.Session = New-PSSessionHC -ComputerName $computerName
+                    $sessionParams = @{
+                        ComputerName = $computerName
+                        ScriptName   = $ScriptName
+                    }
+                    $job.Session = New-PSSessionHC @sessionParams
+
                     $invokeParams += @{
                         Session = $job.Session
                         AsJob   = $true
