@@ -382,6 +382,21 @@ Begin {
                 ) {
                     throw "duplicate ComputerName '$($duplicateComputers.Name)' found in a single task"
                 }
+
+                $computerNames = @()
+                foreach ($name in $task.ComputerName) {
+                    if (
+                        ($name -eq 'localhost') -or
+                        ($name -eq "$env:COMPUTERNAME.$env:USERDNSDOMAIN")
+                    ) {
+                        $computerNames += $env:COMPUTERNAME
+                    }
+                    else {
+                        $computerNames += $name
+                    }
+                }
+
+                $task.ComputerName = $computerNames
                 #endregion
 
                 #region Test SetServiceStartupType
@@ -481,7 +496,6 @@ Begin {
             foreach ($computerName in $task.ComputerName) {
                 $task.Jobs += @{
                     ComputerName = $computerName
-                    Session      = $null
                     Object       = $null
                     Results      = @()
                     Errors       = @()
@@ -545,26 +559,34 @@ Process {
                 #region Start job
                 $computerName = $job.ComputerName
 
-                try {
-                    $sessionParams = @{
-                        ComputerName = $computerName
-                        ScriptName   = $ScriptName
-                    }
-                    $job.Session = New-PSSessionHC @sessionParams
-
-                    $invokeParams += @{
-                        Session = $job.Session
-                        AsJob   = $true
-                    }
-                    $job.Object = Invoke-Command @invokeParams
+                $job.Object = if (
+                    $computerName -eq $env:COMPUTERNAME
+                ) {
+                    Start-Job @invokeParams
                 }
-                catch {
-                    $M = "Failed creating a session to '$computerName': $_"
-                    $job.Errors += $M
-                    $Error.RemoveAt(0)
-                    Write-Warning $M
-                    Write-EventLog @EventWarnParams -Message $M
-                    Continue
+                else {
+                    try {
+                        $getEndpointParams = @{
+                            ComputerName = $computerName
+                            ScriptName   = $ScriptName
+                            ErrorAction  = 'Stop'
+                        }
+
+                        $invokeParams += @{
+                            ConfigurationName = Get-PowerShellConnectableEndpointNameHC @getEndpointParams
+                            ComputerName      = $computerName
+                            AsJob             = $true
+                        }
+                        Invoke-Command @invokeParams
+                    }
+                    catch {
+                        $M = "Failed connecting to '$computerName': $_"
+                        $job.Errors += $M
+                        $Error.RemoveAt(0)
+                        Write-Warning $M
+                        Write-EventLog @EventWarnParams -Message $M
+                        Continue
+                    }
                 }
                 #endregion
 
@@ -622,8 +644,6 @@ Process {
                     Write-Verbose $M
                     Write-EventLog @EventErrorParams -Message $M
                 }
-
-                $job.Session | Remove-PSSession -ErrorAction Ignore
             }
         }
         #endregion

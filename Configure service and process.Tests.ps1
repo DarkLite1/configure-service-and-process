@@ -47,6 +47,9 @@ BeforeAll {
         LogFolder   = New-Item 'TestDrive:/log' -ItemType Directory
     }
 
+    Mock Get-PowerShellConnectableEndpointNameHC {
+        'PowerShell.7'
+    }
     Mock Send-MailHC
     Mock Write-EventLog
 }
