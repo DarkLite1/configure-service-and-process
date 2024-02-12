@@ -435,7 +435,7 @@ Describe 'when the script runs successfully' {
                     Should -Not -BeNullOrEmpty
                 }
             }
-        }
+        } -tag test
     }
     Context 'an e-mail is sent to the user' {
         BeforeAll {
@@ -474,5 +474,5 @@ Describe 'when the script runs successfully' {
                 ($Message -like $testMail.Message)
             }
         }
-    } -tag test
+    }
 }

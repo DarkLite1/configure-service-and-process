@@ -104,6 +104,8 @@ Begin {
                     #endregion
 
                     #region Get service state
+                    Start-Sleep -Seconds 2
+
                     $params = @{
                         Name        = $ServiceName
                         ErrorAction = 'Stop'
@@ -126,17 +128,15 @@ Begin {
         Function Stop-ProcessHC {
             Param (
                 [parameter(Mandatory)]
-                [alias('Name')]
-                [String]$ProcessName
+                [Int]$ProcessId
             )
 
             try {
-                Get-Process -Name $ProcessName |
-                Stop-Process -EA Stop -Force
+                Stop-Process -Id $ProcessId -EA Stop -Force
             }
             catch {
                 $M = $_; $Error.RemoveAt(0)
-                throw "Failed to stop process '$ProcessName': $M"
+                throw "Failed to stop process ID '$ProcessId': $M"
             }
         }
 
@@ -184,25 +184,33 @@ Begin {
                     Error       = $null
                 }
 
+                #region Get service state
                 $params = @{
                     Name        = $serviceName
                     ErrorAction = 'Stop'
                 }
                 $service = Get-Service @params
 
-                #region Get service state
                 $result.Status = $service.Status.ToString()
                 $result.StartupType = $service.StartupType.ToString()
                 #endregion
 
-                #region Stop service
                 if ($result.Status -ne 'Stopped') {
                     $service | Stop-Service -ErrorAction 'Stop' -Force
 
-                    $result.Status = 'Stopped'
+                    #region Get service state
+                    Start-Sleep -Seconds 2
+
+                    $params = @{
+                        Name        = $serviceName
+                        ErrorAction = 'Stop'
+                    }
+                    $service = Get-Service @params
+
+                    $result.Status = $service.Status.ToString()
                     $result.Action = 'Stopped service'
+                    #endregion
                 }
-                #endregion
             }
             catch {
                 $result.Error = $_
@@ -234,7 +242,7 @@ Begin {
                         Error       = $null
                     }
 
-                    Stop-ProcessHC -ProcessName $processName -EA Stop
+                    Stop-ProcessHC -ProcessId $process.Id -EA Stop
 
                     $result.Status = 'Stopped'
                     $result.Action = 'Stopped process'
