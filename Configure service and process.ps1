@@ -29,6 +29,10 @@
 
     .PARAMETER SendMail.To
         List of e-mail addresses where to send the e-mail too.
+
+    .PARAMETER PSSessionConfiguration
+        The version of PowerShell on the remote endpoint as returned by
+        Get-PSSessionConfiguration.
 #>
 
 [CmdletBinding()]
@@ -37,6 +41,7 @@ Param(
     [String]$ScriptName,
     [Parameter(Mandatory)]
     [String]$ImportFile,
+    [String]$PSSessionConfiguration = 'PowerShell.7',
     [String]$LogFolder = "$env:POWERSHELL_LOG_FOLDER\Monitor\Monitor service\$ScriptName",
     [String[]]$ScriptAdmin = @(
         $env:POWERSHELL_SCRIPT_ADMIN,
@@ -573,28 +578,12 @@ Process {
                     Start-Job @invokeParams
                 }
                 else {
-                    try {
-                        $getEndpointParams = @{
-                            ComputerName = $computerName
-                            ScriptName   = $ScriptName
-                            ErrorAction  = 'Stop'
-                        }
-
-                        $invokeParams += @{
-                            ConfigurationName = Get-PowerShellConnectableEndpointNameHC @getEndpointParams
-                            ComputerName      = $computerName
-                            AsJob             = $true
-                        }
-                        Invoke-Command @invokeParams
+                    $invokeParams += @{
+                        ConfigurationName = $PSSessionConfiguration
+                        ComputerName      = $computerName
+                        AsJob             = $true
                     }
-                    catch {
-                        $M = "Failed connecting to '$computerName': $_"
-                        $job.Errors += $M
-                        $Error.RemoveAt(0)
-                        Write-Warning $M
-                        Write-EventLog @EventWarnParams -Message $M
-                        Continue
-                    }
+                    Invoke-Command @invokeParams
                 }
                 #endregion
 
@@ -603,32 +592,21 @@ Process {
                     Job        = $Tasks.Jobs.Object | Where-Object { $_ }
                     MaxThreads = $MaxConcurrentJobs
                 }
-
-                if ($waitJobParams.Job) {
-                    Wait-MaxRunningJobsHC @waitJobParams
-                }
+                Wait-MaxRunningJobsHC @waitJobParams
                 #endregion
             }
         }
         #endregion
 
         #region Wait for all jobs to finish
-        $waitJobParams = @{
-            Job = $Tasks.Jobs.Object | Where-Object { $_ }
-        }
-        if ($waitJobParams.Job) {
-            Write-Verbose 'Wait for all jobs to finish'
+        Write-Verbose 'Wait for all jobs to finish'
 
-            $null = Wait-Job @waitJobParams
-        }
+        $null = $Tasks.Jobs.Object | Wait-Job
         #endregion
 
         #region Get job results and job errors
         foreach ($task in $Tasks) {
-            foreach (
-                $job in
-                $task.Jobs | Where-Object { $_.Object }
-            ) {
+            foreach ($job in $task.Jobs) {
                 $jobErrors = @()
                 $receiveParams = @{
                     ErrorVariable = 'jobErrors'
